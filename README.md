@@ -1,2 +1,3 @@
 # zhihu_rednote_articles
-source file of the articles that will be launched on zhihu and rednote
+## Contribution
+open a PR to submit your article drafts and other related materials like images for review
