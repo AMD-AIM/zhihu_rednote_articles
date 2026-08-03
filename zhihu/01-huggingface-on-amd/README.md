@@ -48,9 +48,7 @@ rocminfo | grep gfx
 | RDNA3.5 | gfx1151 | Ryzen AI Max+ 395 / 392 / 388 |
 | RDNA2 | gfx1030 | PRO W6800 / V620 |
 
-更加详细的 AMD 显卡架构代号映射关系见 AMD GPU 对应哪个 gfx？ROCm 7.14 完整对照表（附安装命令）。
-
-<!-- Hongwei 第一篇发布后，将上句文章名替换为知乎 Markdown 超链接。 -->
+更加详细的 AMD 显卡架构代号映射关系见 [一文讲清AMD GPU 显卡型号及其代号gfx(建议收藏)](https://zhuanlan.zhihu.com/p/2067663713826612548)。
 
 上表中的 gfx1030 只对应官方支持列表里的 PRO W6800 和 V620，不包含 RX 6900 XT / 6800 XT。
 
