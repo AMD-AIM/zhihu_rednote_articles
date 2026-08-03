@@ -1,4 +1,4 @@
-# AMD GPU 显卡/gfx代号/架构介绍：gfx 确认方法，一篇讲清，建议收藏
+# 一文讲清AMD GPU 显卡型号及其代号gfx(建议收藏)
 
 装 ROCm 时，最容易混淆的是显卡型号、gfx 代号、架构。在 ROCm 7.14 的多架构 Python 发布中，gfx 是选择 Python 安装 device extras 标签 的依据。
 
