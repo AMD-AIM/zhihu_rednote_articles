@@ -54,7 +54,7 @@ gfx1030 需要单独说明。ROCm 7.14.0 仍官方支持 PRO W6800 和 PRO V620�
 
 ## 确认本机 LLVM Target
 
-已经完成 AMD 驱动与 ROCm Core SDK 前置安装后，可以用 rocminfo 查看实际识别到的目标：
+已经完成 AMD 驱动与 ROCm Core SDK 前置安装(下期文章会详细解析)：
 
     rocminfo | grep -oE 'gfx[0-9a-z]+' | sort -u
 
