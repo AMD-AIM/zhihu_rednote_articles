@@ -1,0 +1,81 @@
+# 一文讲清AMD GPU 显卡型号及其代号gfx(建议收藏)
+
+装 ROCm 时，最容易混淆的是显卡型号、gfx 代号、架构。在 ROCm 7.14 的多架构 Python 发布中，gfx 是选择 Python 安装 device extras 标签 的依据。
+
+看完本文，你会学到如何根据 AMD GPU 或 APU 型号找到其对应的显卡架构代号gfx。
+
+## ROCm 7.14.0 官方支持速查
+
+下表按 [ROCm 7.14.0 官方硬件支持表](https://rocm.docs.amd.com/en/docs-7.14.0/about/release-notes.html#amd-hardware-support)整理。只列出官方支持设备。
+
+### Instinct
+
+| GPU 加速器型号 | gfx | 架构 |
+| --- | --- | --- |
+| MI355X、MI350X、MI350P | gfx950 | CDNA 4 |
+| MI325X、MI300X、MI300A | gfx942 | CDNA 3 |
+| MI250X、MI250、MI210 | gfx90a | CDNA 2 |
+| MI100 | gfx908 | CDNA |
+
+### Radeon
+
+| 显卡型号 | gfx | 架构 |
+| --- | --- | --- |
+| RX 9070 XT、RX 9070 GRE、RX 9070；AI PRO R9700S、R9700、R9600D | gfx1201 | RDNA 4 |
+| RX 9060 XT LP、RX 9060 XT、RX 9060 | gfx1200 | RDNA 4 |
+| RX 7900 XTX、RX 7900 XT、RX 7900 GRE；PRO W7900、W7800 | gfx1100 | RDNA 3 |
+| RX 7800 XT、RX 7700 XT、RX 7700；PRO W7700、PRO V710 | gfx1101 | RDNA 3 |
+| RX 7600 | gfx1102 | RDNA 3 |
+| PRO W6800、PRO V620 | gfx1030 | RDNA 2 |
+
+gfx1030 需要单独说明。ROCm 7.14.0 仍官方支持 PRO W6800 和 PRO V620，但是同为 gfx1030 的 RX 6900 XT 或 RX 6800 XT 官方并不支持。
+
+### Ryzen APU
+
+下表按 APU 型号、gfx 和 iGPU 型号归类；gfx 和 iGPU 相同的多个 APU 合并为一行。安装时，先用完整 APU 型号在表中找到对应行，再使用该行的 gfx 选择 ROCm 安装 extra。
+
+| APU 型号 | gfx | 架构 | iGPU 型号 |
+| --- | --- | --- | --- |
+| Ryzen AI Max+ PRO 495 | gfx1151 | RDNA 3.5 | Radeon 8065S |
+| Ryzen AI Max PRO 490、485；Ryzen AI Max PRO 390、385；Ryzen AI Max 390、385 | gfx1151 | RDNA 3.5 | Radeon 8050S |
+| Ryzen AI Max+ PRO 395；Ryzen AI Max+ 395、392、388 | gfx1151 | RDNA 3.5 | Radeon 8060S |
+| Ryzen AI Max PRO 380 | gfx1151 | RDNA 3.5 | Radeon 8040S |
+| Ryzen AI 7 445；Ryzen AI 5 435、430；Ryzen AI 5 PRO 435 | gfx1153 | RDNA 3.5 | Radeon 840M |
+| Ryzen AI 9 HX PRO 475、470、375、370；Ryzen AI 9 HX 475、470、375、370 | gfx1150 | RDNA 3.5 | Radeon 890M |
+| Ryzen AI 9 PRO 465；Ryzen AI 9 465、365 | gfx1150 | RDNA 3.5 | Radeon 880M |
+| Ryzen AI 7 PRO 450、350；Ryzen AI 7 450、350 | gfx1152 | RDNA 3.5 | Radeon 860M |
+| Ryzen AI 5 PRO 440、340；Ryzen AI 7 345；Ryzen AI 5 340 | gfx1152 | RDNA 3.5 | Radeon 840M |
+| Ryzen AI 5 330 | gfx1152 | RDNA 3.5 | Radeon 820M |
+| Ryzen 9 270；Ryzen 7 260、250；Ryzen 7 PRO 250 | gfx1103 | RDNA 3 | Radeon 780M |
+| Ryzen 5 240、230；Ryzen 5 PRO 230 | gfx1103 | RDNA 3 | Radeon 760M |
+| Ryzen 5 220；Ryzen 3 210；Ryzen 5 PRO 220、215；Ryzen 3 PRO 210 | gfx1103 | RDNA 3 | Radeon 740M |
+
+注意：Radeon 840M 同时出现在 gfx1152 和 gfx1153 的 APU 中。因此 iGPU 型号只能辅助核对，不能替代完整 APU 型号。
+
+## 确认本机 LLVM Target
+
+已经完成 AMD 驱动与 ROCm Core SDK 前置安装(下期文章会详细解析)：
+
+    rocminfo | grep -oE 'gfx[0-9a-z]+' | sort -u
+
+输出中的 gfx 代号应与上表对应。笔记本、集成 GPU 与独立 GPU 并存的设备，以及虚拟化环境，可能显示多个目标；后续安装时要确认实际使用的 GPU。
+
+## gfx 的适用边界
+
+gfx 只标识 GPU 设备代码的编译目标，不能证明某个 GPU 与操作系统组合已获官方支持。
+Windows 和 WSL 的支持状态取决于具体 GPU 型号与操作系统组合。安装前应在 [ROCm 兼容性矩阵](https://rocm.docs.amd.com/en/docs-7.14.0/compatibility/compatibility-matrix.html) 中按完整型号核对，不能只根据 gfx 推断 WSL 支持，详细表格见下一篇。
+
+## 不在官方支持表的 GPU
+
+先确认所查的是[当前版本的官方硬件表](https://rocm.docs.amd.com/en/docs-7.14.0/about/release-notes.html#amd-hardware-support)。GPU 不在表中，不代表绝对不能运行。
+[TheRock](https://github.com/ROCm/TheRock/blob/main/SUPPORTED_GPUS.md) 的 nightly 构建覆盖更多 gfx 目标，适合个人验证。它提供编译产物，不代表该 GPU、框架和工作负载已经经过完整验证。
+
+## 小结
+
+完整 GPU 或 APU 型号用于确定 gfx。gfx 只是 GPU 设备代码的编译目标；是否属于官方支持组合，仍需按完整型号和系统环境在[ROCm 兼容性矩阵](https://rocm.docs.amd.com/en/docs-7.14.0/compatibility/compatibility-matrix.html)中核对。
+
+如果你的 GPU 或 APU 不在表中，或者 rocminfo 显示的 gfx 与预期不一致，欢迎在评论区提供完整型号、操作系统版本和 rocminfo 输出，便于进一步核对。
+
+操作系统支持以及安装 extra、PyTorch 与 ROCm 版本组合，我们下篇安装文章再来详细解析。
+
+建议先保存收藏这份对照表，后面查型号会方便很多。
