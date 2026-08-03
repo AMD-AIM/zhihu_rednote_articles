@@ -1,4 +1,4 @@
-# A 卡跑 HuggingFace｜device 照样写 cuda
+# 手把手教你用 AMD 显卡基于 HuggingFace 运行大模型
 
 - **平台**：知乎
 - **类型**：基础内容（第 1 篇）
@@ -10,7 +10,7 @@
 
 ## 标题
 
-**教你用 A 卡跑 HuggingFace 模型 [2026-07 实测·长期更新]**
+**手把手教你用 AMD 显卡基于 HuggingFace 运行大模型**
 
 ## 正文
 
@@ -47,6 +47,10 @@ rocminfo | grep gfx
 | RDNA3 | gfx1102 | RX 7600 |
 | RDNA3.5 | gfx1151 | Ryzen AI Max+ 395 / 392 / 388 |
 | RDNA2 | gfx1030 | PRO W6800 / V620 |
+
+更加详细的 AMD 显卡架构代号映射关系见 AMD GPU 对应哪个 gfx？ROCm 7.14 完整对照表（附安装命令）。
+
+<!-- Hongwei 第一篇发布后，将上句文章名替换为知乎 Markdown 超链接。 -->
 
 上表中的 gfx1030 只对应官方支持列表里的 PRO W6800 和 V620，不包含 RX 6900 XT / 6800 XT。
 
@@ -269,7 +273,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 参考资料：
 
-- PyTorch on ROCm 安装页：rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html
-- ROCm 7.14.0 release notes：rocm.docs.amd.com/en/latest/about/release-notes.html
-- HuggingFace 文档：huggingface.co/docs/transformers/en/kernel_doc/loading_kernels
-- AMD rocm-doctor 排障文档：github.com/amd/skills → staging/rocm-doctor/reference.md
+- [PyTorch on ROCm 安装页](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html)
+- [ROCm 7.14.0 release notes](https://rocm.docs.amd.com/en/latest/about/release-notes.html)
+- [HuggingFace 文档](https://huggingface.co/docs/transformers/en/kernel_doc/loading_kernels)
+- [AMD rocm-doctor 排障文档](https://github.com/amd/skills/blob/main/staging/rocm-doctor/reference.md)
