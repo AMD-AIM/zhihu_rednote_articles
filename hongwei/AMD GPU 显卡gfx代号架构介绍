@@ -2,7 +2,7 @@
 
 装 ROCm 时，最容易混淆的是显卡型号、gfx 代号、架构。在 ROCm 7.14 的多架构 Python 发布中，gfx 是选择 Python 安装 device extras 标签 的依据。
 
-本文只解决一件事：根据 AMD GPU 或 APU 型号找到 gfx。
+看完本文，你会学到如何根据 AMD GPU 或 APU 型号找到其对应的显卡架构代号gfx。
 
 ## ROCm 7.14.0 官方支持速查
 
@@ -67,7 +67,7 @@ Windows 和 WSL 的支持状态取决于具体 GPU 型号与操作系统组合�
 
 ## 不在官方支持表的 GPU
 
-先确认所查的是当前版本的官方硬件表https://rocm.docs.amd.com/en/docs-7.14.0/about/release-notes.html#amd-hardware-support。GPU 不在表中，不代表绝对不能运行。
+先确认所查的是[当前版本的官方硬件表](https://rocm.docs.amd.com/en/docs-7.14.0/about/release-notes.html#amd-hardware-support)。GPU 不在表中，不代表绝对不能运行。
 [TheRock](https://github.com/ROCm/TheRock/blob/main/SUPPORTED_GPUS.md) 的 nightly 构建覆盖更多 gfx 目标，适合个人验证。它提供编译产物，不代表该 GPU、框架和工作负载已经经过完整验证。
 
 ## 小结
@@ -76,4 +76,4 @@ Windows 和 WSL 的支持状态取决于具体 GPU 型号与操作系统组合�
 
 如果你的 GPU 或 APU 不在表中，或者 rocminfo 显示的 gfx 与预期不一致，欢迎在评论区提供完整型号、操作系统版本和 rocminfo 输出，便于进一步核对。
 
-操作系统支持以及安装 extra、PyTorch 与 ROCm 版本组合，放到下篇安装文章再说。
+操作系统支持以及安装 extra、PyTorch 与 ROCm 版本组合，我们下篇安装文章再来详细解析。
