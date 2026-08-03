@@ -18,7 +18,7 @@
 
 HuggingFace 的示例代码通常用 `device='cuda'` 把模型放到 GPU 上。ROCm 版 PyTorch 沿用了 `torch.cuda` 接口，所以换成 AMD GPU 后不需要改成 `hip` 或 `rocm`。查出显卡的 gfx 号并装上对应的 PyTorch wheel 后，就可以运行 Qwen2.5-0.5B-Instruct。
 
-实测环境：ROCm 7.2.0 / gfx1201（RDNA4）/ PyTorch 2.9.1 / transformers 5.14.1，测试日期 2026-07-31。
+我用来实测的环境是 ROCm 7.2.0 / gfx1201（RDNA4）/ PyTorch 2.9.1 / transformers 5.14.1，测试日期 2026-07-31。
 
 ### 一、确认 GPU 和 gfx 号
 
@@ -105,7 +105,7 @@ print(torch.cuda.get_device_name(0))
 print(torch.cuda.get_arch_list())
 ```
 
-本次实测输出：
+我在这台 R9700 上得到的输出如下：
 
 ```text
 2.9.1+rocm7.2.0.git7e1940d4
@@ -158,7 +158,7 @@ print(out[0]["generated_text"][-1]["content"])
 
 ![pipeline 跑通，device 为 cuda:0](images/03-pipeline-run.png)
 
-本次实测中，模型加载和下载耗时 19.3 秒，生成 64 个 token 耗时 1.84 秒，显存占用 1.00 GiB。`pipeline device` 显示为 `cuda:0`，说明模型已经在 AMD GPU 上运行。
+我这里下载和加载模型用了 19.3 秒，生成 64 个 token 用了 1.84 秒，显存占用 1.00 GiB。`pipeline device` 显示为 `cuda:0`，说明模型已经在 AMD GPU 上运行。
 
 transformers 5.x 使用 `dtype=`。旧代码里的 `torch_dtype=` 目前仍可运行，但会显示弃用提示。
 
@@ -185,7 +185,7 @@ curl -sI \
   https://hf-mirror.com/Qwen/Qwen2.5-0.5B-Instruct/resolve/main/config.json
 ```
 
-`huggingface_hub` 1.26.0 会检查 `x-repo-commit` 和 `x-linked-etag`。本次测试中，官方站返回了这些字段，镜像只返回 308 跳转。
+`huggingface_hub` 1.26.0 会检查 `x-repo-commit` 和 `x-linked-etag`。我测试时，官方站返回了这些字段，镜像只返回 308 跳转。
 
 ![两边响应头对比](images/04-header-diff.png)
 
@@ -243,7 +243,7 @@ print("linear 相对误差:", error)
 
 ![数值自检输出](images/05-softmax-check.png)
 
-softmax 的结果应为 1.0。fp16 的 linear 相对误差应在 `1e-3` 以内。
+softmax 的结果应为 1.0。fp16 的 linear 相对误差应在 `1e-3` 以内。我在 gfx1201 / ROCm 7.2.0 上得到的结果分别是 1.0 和 0.000441937。
 
 #### 4. gfx1201 不要开启 expandable segments
 
