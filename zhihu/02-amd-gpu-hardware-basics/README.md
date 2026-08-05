@@ -14,13 +14,15 @@
 
 ## 正文
 
-我第一次看 R9700 的 `rocminfo` 输出时，最先注意的是 gfx1201。继续往下，同一份输出还列出了 64 个 Compute Unit、每个 CU 2 个 SIMD、32 线程的 Wavefront，以及 64KB GROUP Memory。
+用 PyTorch 跑一个矩阵乘法，底层发生了什么？
 
-gfx 告诉编译器为哪种 GPU 生成代码，后面这些字段描述设备的执行组织和资源上限。顺着 AI 算子的执行路线，可以把 Workgroup、Wavefront、Compute Unit、Vector / Matrix 运算和 Shared Memory 连起来。
+在 AMD GPU 上，这个操作不是交给某个核心从头算到尾的。它会经过一条从软件到硬件的路径：PyTorch 算子 → GPU Kernel → 成百上千个线程被分组调度到硬件单元上并行执行。
+
+这篇文章以 rocminfo 的实测输出为线索，逐层拆解这条路径上的关键硬件结构——Compute Unit、Vector Core、Shared Memory——它们分别是什么、怎么配合完成计算。用到的数据来自 Radeon RX 9070 和 Radeon 8060S。
 
 ### 一、一个 AI 算子怎么进入 GPU
 
-以矩阵乘法为例，PyTorch 不会把整个矩阵交给一个核心串行计算。底层 Kernel 会把任务拆成大量 Work-item，每个 Work-item 负责一部分数据。
+底层 Kernel 会把任务拆成大量 Work-item，每个 Work-item 负责一部分数据。
 
 Grid 是一次 Kernel 启动的全部工作，Grid 再分成多个 Workgroup。一个 Workgroup 内的 Work-item 可以同步，也可以通过 LDS 交换数据。
 
@@ -32,7 +34,7 @@ Work-item 到达硬件后不会逐个调度。GPU 把它们组成 Wavefront，�
 
 Compute Unit，简称 CU，是 AMD GPU 组织计算资源的核心单元。RDNA 还会把两个 CU 及其相关资源组成一个 Workgroup Processor，简称 WGP。
 
-我在 R9700 和 Radeon 8060S 的 `rocminfo` 中都看到每个 CU 报告 2 个 SIMD。`rocminfo` 报告的是 SIMD 数，AMD 文档用 Vector ALU 表示向量算术路径。本文把 Vector Core 作为这条路径的通俗称呼，它不是一个独立的 `rocminfo` 字段。
+从 `rocminfo` 看，两款 GPU 的每个 CU 都包含 2 个 SIMD。下面这张表列出 CU / WGP 内的主要资源和它们在 AI 计算中的角色。
 
 | CU / WGP 资源 | 主要工作 | 与 AI 的关系 |
 |---|---|---|
@@ -41,6 +43,8 @@ Compute Unit，简称 CU，是 AMD GPU 组织计算资源的核心单元。RDNA 
 | Scalar ALU | 处理一个 Wavefront 共享的标量和控制信息 | 地址、循环和分支中相同的部分不必每线程重复计算 |
 | VGPR / SGPR | 保存线程和 Wavefront 正在使用的数据 | 寄存器占用会影响一个 CU 能同时驻留多少个 Wavefront |
 | WGP 中的 LDS | 同一 Workgroup 可共享的片上存储 | 复用矩阵 tile，减少反复读取外部内存 |
+
+(PS: AMD 文档中SIMD这条路径也叫 Vector ALU，本文简称 Vector Core)
 
 ![RDNA WGP 与 Compute Unit 简化结构](images/02-rdna-cu.png)
 
