@@ -14,13 +14,13 @@
 
 ## 正文
 
-用 PyTorch 跑一个矩阵乘法，底层发生了什么？
+用 PyTorch 跑一个算子，底层发生了什么？
 
 在 AMD GPU 上，这个操作不是交给某个核心从头算到尾的。它会经过一条从软件到硬件的路径：PyTorch 算子 → GPU Kernel → 成百上千个线程被分组调度到硬件单元上并行执行。
 
-这篇文章以 rocminfo 的实测输出为线索，逐层拆解这条路径上的关键硬件结构——Compute Unit、Vector Core、Shared Memory——它们分别是什么、怎么配合完成计算。用到的数据来自 Radeon AI PRO R9700 和 Radeon 8060S。
+这篇文章以 rocminfo 的实测输出为线索，逐层拆解这条路径上的关键硬件结构——Compute Unit、Vector Core、Shared Memory——它们分别是什么、怎么配合完成计算。涉及的数据来自 Radeon AI PRO R9700 和 Radeon 8060S 的产品规格与实测。
 
-### 一、一个 AI 算子怎么进入 GPU
+### 一个 AI 算子怎么进入 GPU
 
 底层 Kernel 会把任务拆成大量 Work-item，每个 Work-item 负责一部分数据。
 
@@ -30,7 +30,7 @@ Work-item 到达硬件后不会逐个调度。GPU 把它们组成 Wavefront，�
 
 ![AI 算子进入 AMD GPU 的执行路线](images/01-ai-execution-path.png)
 
-### 二、Compute Unit 里面有什么
+### Compute Unit 里面有什么
 
 Compute Unit，简称 CU，是 AMD GPU 组织计算资源的核心单元。RDNA 还会把两个 CU 及其相关资源组成一个 Workgroup Processor，简称 WGP。
 
@@ -52,7 +52,7 @@ R9700 使用 RDNA 4。AMD GPUOpen 资料显示，RDNA 4 的 WMMA 会让整个 Wa
 
 Ryzen AI Max+ 395 的 Radeon 8060S 使用 RDNA 3.5。它同样以 CU、SIMD 和 Wavefront 组织计算，但具体指令由 gfx1151 对应的机器码决定，不能把 RDNA 4 的 WMMA 参数直接套过来。
 
-### 三、Wavefront 怎样隐藏等待时间
+### Wavefront 怎样隐藏等待时间
 
 RDNA 主要使用 Wave32，也支持 Wave64。我测试的 R9700 和 Radeon 8060S 都报告 Wavefront Size 32、每个 CU 最多驻留 32 个 Wavefront。
 
@@ -65,13 +65,13 @@ Wave32 表示 32 个 Work-item 组成一个 Wavefront。它们共享一条指令
 - 同一 Wavefront 内出现不同分支时，硬件需要分别执行不同路径，部分 lane 暂时不工作。
 - Kernel 占用太多寄存器或 LDS 时，CU 能同时容纳的 Wavefront 会减少，隐藏延迟的空间也会变小。
 
-### 四、Shared Memory 在 AMD GPU 里是什么
+### Shared Memory 在 AMD GPU 里是什么
 
-GPU 编程中的 Shared Memory 与 APU 的统一内存不是同一个概念。
+GPU 编程中的 Shared Memory 与以 Ryzen AI Max+ 395 为代表的 APU 所使用的统一内存不是同一个概念。
 
 HIP 代码中的 `__shared__` 在 AMD 硬件上对应 Local Data Share，简称 LDS。它位于片上，容量比显存小得多，但延迟更低，同一 Workgroup 内的 Work-item 可以共同访问。
 
-矩阵乘法 Kernel 常把全局内存中的 tile 暂存到 LDS，再读入 VGPR 供 SIMD / WMMA 使用。同一块数据如果会被重复使用，放入 LDS 可以减少对外部内存的读取。这种 tiling 也常见于部分卷积和归约 Kernel。
+矩阵乘法 Kernel 常把全局内存中的 tile 暂存到 LDS，再读入 VGPR 供 SIMD / WMMA 使用。同一块数据如果会被重复使用，放入 LDS 可以减少对外部内存的读取。
 
 `rocminfo` 把每个 Workgroup 可用的 group-segment 上限显示为 GROUP Memory。我测试的两套环境都显示 64KB：
 
@@ -86,9 +86,9 @@ APU 的统一内存则位于片外。Ryzen AI Max+ 395 的 CPU 与 Radeon 8060S 
 
 它们都可能被简称为共享内存，但所在层级和用途不同。
 
-### 五、消费级独显和 APU 差在哪
+### 消费级独显和 APU 差在哪
 
-R9700 和 Ryzen AI Max+ 395 都使用 RDNA 架构，也都能运行 AI Kernel。两者最明显的差别在计算资源规模和外部内存路径。
+R9700 和 Ryzen AI Max+ 395 都使用 RDNA 架构，也都支持 AI 开发，例如编写 Kernel。两者最明显的差别在计算资源规模和外部内存路径。
 
 | 本地环境 | R9700 | Ryzen AI Max+ 395 |
 |---|---|---|
@@ -104,7 +104,7 @@ R9700 有独立显存，CPU 数据通常需要经过 PCIe 进入 GPU 显存。Ry
 
 统一内存改变的是 CPU / GPU 的物理内存关系与映射方式，不会把 40 个 CU 变成 64 个 CU，也不代表 APU 一定比独显快。反过来，独显的 32GB 固定显存也不能单独说明某个模型的实际速度。
 
-### 六、用 rocminfo 看本机架构
+### 用 rocminfo 看本机架构
 
 运行：
 
@@ -118,7 +118,7 @@ rocminfo | grep -A 2 'Segment:.*GROUP'
 
 我在两台机器上的输出如图。Compute Unit、SIMDs per CU、Wavefront Size 和 GROUP Memory 分别对应文章里的 CU、向量执行单元、Wavefront 和 LDS。完整型号、gfx 与 ROCm 支持关系可参考 [一文讲清AMD GPU 显卡型号及其代号gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)。（PS：架构资料核对至 2026-08-05）
 
-理解了这些硬件结构之后，下一步可以关注 Kernel 层面的 occupancy 和 tiling 策略。
+用 `rocminfo` 查到这些字段后，CU、Wavefront 和 LDS 就能和手里的具体设备对应起来。
 
 #AMD #ROCm #GPU架构 #RDNA #APU #ComputeUnit #人工智能
 
