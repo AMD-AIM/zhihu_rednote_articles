@@ -18,7 +18,7 @@
 
 在 AMD GPU 上，这个操作不是交给某个核心从头算到尾的。它会经过一条从软件到硬件的路径：PyTorch 算子 → GPU Kernel → 成百上千个线程被分组调度到硬件单元上并行执行。
 
-这篇文章以 rocminfo 的实测输出为线索，逐层拆解这条路径上的关键硬件结构——Compute Unit、Vector Core、Shared Memory——它们分别是什么、怎么配合完成计算。用到的数据来自 Radeon RX 9070 和 Radeon 8060S。
+这篇文章以 rocminfo 的实测输出为线索，逐层拆解这条路径上的关键硬件结构——Compute Unit、Vector Core、Shared Memory——它们分别是什么、怎么配合完成计算。用到的数据来自 Radeon AI PRO R9700 和 Radeon 8060S。
 
 ### 一、一个 AI 算子怎么进入 GPU
 
@@ -44,7 +44,7 @@ Compute Unit，简称 CU，是 AMD GPU 组织计算资源的核心单元。RDNA 
 | VGPR / SGPR | 保存线程和 Wavefront 正在使用的数据 | 寄存器占用会影响一个 CU 能同时驻留多少个 Wavefront |
 | WGP 中的 LDS | 同一 Workgroup 可共享的片上存储 | 复用矩阵 tile，减少反复读取外部内存 |
 
-(PS: AMD 文档中SIMD这条路径也叫 Vector ALU，本文简称 Vector Core)
+(PS: AMD 文档中SIMD这条路径也叫 Vector ALU，本文简称 Vector Core。)
 
 ![RDNA WGP 与 Compute Unit 简化结构](images/02-rdna-cu.png)
 
@@ -80,16 +80,9 @@ Segment:  GROUP
 Size:     64 KB
 ```
 
-GROUP 64KB 不代表 WGP 的物理 LDS 总量。它表示单个 Workgroup 在当前软件环境中可申请的 LDS / group-segment 上限。
+这里的 64KB 是单个 Workgroup 可申请的 group-segment 上限，不等于 WGP 物理 LDS 的总容量。
 
 APU 的统一内存则位于片外。Ryzen AI Max+ 395 的 CPU 与 Radeon 8060S 共享 LPDDR5x 物理内存；BIOS 还可以从中专门划出一部分给 GPU，称为 carve-out。GTT 决定用户进程可以映射给 GPU 使用的系统内存上限。
-
-因此：
-
-- LDS / HIP Shared Memory 是 Kernel 内部使用的片上共享存储。
-- 统一内存是 CPU 与集成 GPU 共享的物理内存。
-- carve-out 是从统一内存中预留给 GPU 的部分。
-- GTT 是系统内存可映射到 GPU 地址空间的上限，不是另一块物理内存。
 
 它们都可能被简称为共享内存，但所在层级和用途不同。
 
@@ -123,13 +116,11 @@ rocminfo | grep -A 2 'Segment:.*GROUP'
 
 ![R9700 与 Radeon 8060S 的 rocminfo 架构字段](images/03-rocminfo-fields.png)
 
-我在两台机器上的输出如图。Compute Unit、SIMDs per CU、Wavefront Size 和 GROUP Memory 分别对应文章里的 CU、向量执行单元、Wavefront 和 LDS。完整型号、gfx 与 ROCm 支持关系可参考 [一文讲清AMD GPU 显卡型号及其代号gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)。
+我在两台机器上的输出如图。Compute Unit、SIMDs per CU、Wavefront Size 和 GROUP Memory 分别对应文章里的 CU、向量执行单元、Wavefront 和 LDS。完整型号、gfx 与 ROCm 支持关系可参考 [一文讲清AMD GPU 显卡型号及其代号gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)。（PS：架构资料核对至 2026-08-05）
 
-架构资料核对至 2026-08-05。不同 RDNA 代次的 SIMD、Wavefront 和矩阵指令细节可能不同，不能把 MI300X / CDNA 的参数直接套到消费级 GPU 或 APU。
+理解了这些硬件结构之后，下一步可以关注 Kernel 层面的 occupancy 和 tiling 策略。
 
 #AMD #ROCm #GPU架构 #RDNA #APU #ComputeUnit #人工智能
-
-## 首评
 
 参考资料：
 
