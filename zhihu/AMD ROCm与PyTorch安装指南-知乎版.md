@@ -19,11 +19,11 @@ ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作�
 | TheRock nightly | AMD 上游 nightly；有编译产物不等于发布版验证 | 官方表外显卡的个人验证 | 没有发布版 SLA，版本可能回归 |
 | DirectML 或 Vulkan | 替代后端，不属于 ROCm 官方 PyTorch 路径 | Windows 或老卡上的本地推理，尤其是 llama.cpp 一类程序 | 训练、自定义 HIP 算子与算子覆盖不能按 ROCm 预期 |
 
-我的建议是：官方表内设备优先走原生 Linux + pip；想隔离依赖再用官方 Docker 镜像。先修软件栈和环境组合，再考虑社区构建或更换硬件。相同 gfx 不代表 Windows、WSL2 与 Linux 的支持结论相同。
+我的建议是：官方支持的设备优先在原生 Linux 中通过 pip 安装；需要隔离依赖时，再使用官方 Docker 镜像。先核对显卡型号、系统、内核、驱动和 PyTorch 安装参数；官方路径仍无法满足需求，再尝试 TheRock 等社区构建，最后才考虑更换硬件。即使 gfx 相同，Windows、WSL2 与 Linux 的支持状态也可能不同。
 
 ## 先查完整 gfx：device extra 从这里取值
 
-先从这篇文章 https://zhuanlan.zhihu.com/p/2067663713826612548 找到 gfx代号，再到后面的 device extra 表中取安装标签。
+可参考过往 [文章](https://zhuanlan.zhihu.com/p/2067663713826612548) 找到 gfx代号，再到后面的 device extra 表中取安装标签。
 
 ### gfx 到 device extra
 
@@ -50,8 +50,8 @@ ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作�
 
 ## 安装Rocm
 
-gfx 不能单独推出环境支持,所以根据下面这张表查询。
-下表按 ROCm 7.14.0 分支的[安装选择器](https://rocm.docs.amd.com/en/docs-7.14.0/install/rocm.html)整理；它表示该组合在选择器中可选，不代表性能或所有工作负载已验证。最后仍要在 [兼容性矩阵](https://rocm.docs.amd.com/en/docs-7.14.0/compatibility/compatibility-matrix.html) 选择完整 SKU 复核。完整型号决定设备支持，操作系统、驱动和 WSL2 状态还要单独核对。
+光靠gfx号不能推出安装的环境要求, 需要根据下面这张表查询。
+下表按 ROCm 7.14.0 分支的[安装选择器](https://rocm.docs.amd.com/en/docs-7.14.0/install/rocm.html)整理。最后仍要在 [兼容性矩阵](https://rocm.docs.amd.com/en/docs-7.14.0/compatibility/compatibility-matrix.html) 选择完整 SKU 复核。完整型号决定设备支持，操作系统、驱动和 WSL2 状态还要单独核对。
 
 安装rocm过程在[安装选择器](https://rocm.docs.amd.com/en/docs-7.14.0/install/rocm.html)查询。
 
@@ -83,9 +83,7 @@ gfx 不能单独推出环境支持,所以根据下面这张表查询。
 2. RX 9060 XT 与 RX 9060 XT LP 同为 gfx1200，WSL2 结论不同。
 3. Ryzen AI 9 HX PRO 375 与 475 同为 gfx1150，WSL2 结论不同。
 
-Ryzen AI Max 还要单独核对内核。AMD 的 [RDNA 3.5 系统优化页](https://rocm.docs.amd.com/en/docs-7.14.0/reference/system-optimization/rdna3-5.html)要求 Ubuntu 24.04 至少使用 HWE 6.17.0-19.19~24.04.2，或 OEM 6.14.0-1018。该页的 ROCm 兼容表最高只列到 7.12，因此这些版本号只能说明内核已包含所需修复，不能单独证明 ROCm 7.14 已官方验证该组合。
-
-## 安装PyTorch前：pip install 没报错，只证明 Python 包下载、解压和依赖解析成功
+## 安装PyTorch前
 
 一个 ROCm PyTorch 环境至少有四层：
 
@@ -103,29 +101,6 @@ pip 安装成功，只代表 Python 包和部分依赖已装好，不代表 ROCm
     python3 --version
     
 上面的 gfx 表决定安装标签，OS 表决定环境边界。这四项只能确认型号、系统、内核与 Python 版本；驱动装好后，再用 rocminfo 确认 ROCm 是否识别到计算设备，再到 [PyTorch 安装页](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html) 选对应版本。
-
-### 第一步：不要用 pip 安装驱动
-
-Python wheel 不含内核模块。Radeon 独显和 Instinct 需要匹配的 AMD GPU Driver；Ryzen APU 则要使用官方指定 Ubuntu 版本的内置内核驱动。
-
-驱动会改动系统，我不建议从另一张卡、另一版 Ubuntu 或 WSL 教程中复制 amdgpu DKMS 命令。正确顺序只有三步：
-
-1. 在 [ROCm 安装页](https://rocm.docs.amd.com/en/docs-7.14.0/install/rocm.html) 选中自己的完整型号、发行版和安装方式；
-2. 对 Radeon 独显或 Instinct，按该页面生成的 AMD GPU Driver 步骤安装并重启；
-3. 对 Ryzen APU，先按 OS 表确认 HWE 6.17；若安装选择器明确要求 OEM 6.14，则按该选择器路径操作，不要替换成独显 DKMS 驱动。
-
-重启后检查设备和权限：
-
-    ls -l /dev/kfd /dev/dri/renderD*
-    id
-
-在原生 Linux 上，/dev/kfd 与至少一个 renderD 节点都存在，才说明驱动已暴露 ROCm 计算接口。缺少 /dev/kfd 时，我会回到驱动、内核和 Secure Boot 排查，而不是重装 torch。
-
-普通用户还需要 render 与 video 组：
-
-    sudo usermod -a -G render,video $LOGNAME
-
-执行后完整注销再登录，或重启；只开新终端不会刷新附加组。
 
 ### 第二步：创建隔离的 Python 环境
 
@@ -174,10 +149,6 @@ ROCm 7.14.0 的 Python 仓库采用 multi-arch。索引地址不再区分 gfx，
 - torchaudio 不带 device extra。
 - 不要先自行安装另一套 rocm Python 元包。先完成安装页要求的宿主机前置条件，再让这条官方命令解析依赖。
 
-AMD 7.14.0 发布页只给出带 device extra 的 GPU 安装命令，请不要省略。TheRock nightly 的 host-only 行为只适用于它自己的 nightly 索引，不能据此推断发布索引。
-
-只有编译 HIP 扩展或自定义算子时，我才会在 PyTorch 跑通后按官方文档补装 devel SDK。
-
 ### device-all 什么时候才值得装
 
 单机开发选单一 gfx。下表来自 [TheRock #5289](https://github.com/ROCm/TheRock/issues/5289) 的 nightly 提案，只用于理解包体积。
@@ -187,8 +158,6 @@ AMD 7.14.0 发布页只给出带 device extra 的 GPU 安装命令，请不要�
 | torch，不带 extra | host-only torch 入口包 | 约 431 MB | 不是三件套总下载量 |
 | torch[gfx1100] | host 加 gfx1100 和 gfx11 device wheel | 约 1.1 GB | 不是当前发布版 device-gfx 写法 |
 | torch[all] | 当时全部 16 个 device wheel | 约 5.5 GB | 不是当前发布版实测 |
-
-当前发布版命令使用 device-gfxXXXX 或 device-all。nightly 目标会变化，我不建议用这些数字反推当前下载量。
 
 ## 用两个检查确认不是空装
 
@@ -253,22 +222,15 @@ Docker 只隔离用户态依赖，不会安装宿主机驱动。我只在原生 
 
     python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available())'
 
-宿主机可见 GPU、容器不可见时，先查 Docker 守护进程权限、设备映射与 video 组。SYS_PTRACE 和 seccomp=unconfined 来自官方示例，会放宽隔离；我只会对受信任镜像使用，生产环境应按安全基线收紧。
-
 ## Windows 和 WSL2：同一个 gfx 也要重新核对
 
 ### 原生 Windows
 
-ROCm 7.14.0 矩阵列出 Windows 11 25H2、Adrenalin 26.6.4 和 OEM 驱动 26.10.28。它们仍须与具体 GPU SKU 一起核对，不是任意 AMD 显卡的通用答案。
-
-我不会在 Windows 安装 Linux 的 amdgpu DKMS 或执行 usermod。完成驱动与型号核对后，再在 PowerShell 创建虚拟环境。下面仍以 gfx1201 为例：
-
+命令如下：
     py -3.12 -m venv .venv
     .\.venv\Scripts\Activate.ps1
     python -m pip install --upgrade pip
     python -m pip install --index-url https://repo.amd.com/rocm/whl-multi-arch/ 'torch[device-gfx1201]==2.12.0+rocm7.14.0' 'torchvision[device-gfx1201]==0.27.0+rocm7.14.0' 'torchaudio==2.11.0+rocm7.14.0'
-
-验证代码与 Linux 相同。若 PowerShell 拒绝执行 Activate.ps1，应按组织安全策略处理，不要关闭系统安全防护。
 
 ### WSL2
 
