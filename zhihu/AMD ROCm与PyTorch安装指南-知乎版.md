@@ -1,12 +1,12 @@
 # 从 gfx 到第一个 GPU Tensor：AMD ROCm 7.14 + PyTorch 安装指南
 
-这篇可以独立阅读：先按完整型号查 gfx 与操作系统支持，再装驱动、PyTorch，最后用一次真实张量计算确认 GPU 可用。
+本文包括先按完整型号查 gfx 与操作系统支持，再装PyTorch，最后用一次真实张量计算确认 GPU 可用。
 
 我以 ROCm Core SDK 7.14.0 与 PyTorch 2.12.0 为主线，重点写原生 Linux，也保留 Windows、WSL2、Docker 和官方表外显卡的分流。硬件、系统和版本信息已按 2026-08-04 的官方页面复核；发布前仍建议读者打开文末链接按自己的完整型号再查一次。
 
-本文的数据优先级是：AMD release notes 与兼容性矩阵用于硬件和系统支持；PyTorch 安装页用于版本与安装命令；TheRock 用于 nightly 目标。PyTorch 安装页是滚动页面，使用前请确认页标题仍为 ROCm 7.14.0。TheRock #5289 是开放提案，只用来说明包体积量级，不当作发布版实测。
+本文的数据来源是：AMD release notes 与兼容性矩阵用于硬件和系统支持；PyTorch 安装页用于版本与安装命令；TheRock 用于 nightly 目标。PyTorch 安装页是滚动页面，使用前请确认页标题仍为 ROCm 7.14.0。TheRock #5289 是开放提案，只用来说明包体积量级，不当作发布版实测。
 
-## 先把可选路径列全
+## ROCm安装的所有路径
 
 ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作系统 × 内核或驱动 × 框架版本。下面先列出全部常见路径，再决定该复制哪一段命令。
 
@@ -18,7 +18,6 @@ ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作�
 | WSL2 + Ubuntu | 官方但按具体 SKU 验证 | 需要 Windows 桌面与 Linux Python 工作流共存 | Windows 主机驱动、WSL 发行版和 GPU 型号缺一不可 |
 | TheRock nightly | AMD 上游 nightly；有编译产物不等于发布版验证 | 官方表外显卡的个人验证 | 没有发布版 SLA，版本可能回归 |
 | DirectML 或 Vulkan | 替代后端，不属于 ROCm 官方 PyTorch 路径 | Windows 或老卡上的本地推理，尤其是 llama.cpp 一类程序 | 训练、自定义 HIP 算子与算子覆盖不能按 ROCm 预期 |
-| ZLUDA 或项目专用社区 fork | 社区方案；本文未逐卡验证 | 某个明确的 CUDA 项目实验 | 不是 ROCm PyTorch 的直接替代，兼容性与维护风险较高 |
 
 我的建议是：官方表内设备优先走原生 Linux + pip；想隔离依赖再用官方 Docker 镜像。先修软件栈和环境组合，再考虑社区构建或更换硬件。相同 gfx 不代表 Windows、WSL2 与 Linux 的支持结论相同。
 
