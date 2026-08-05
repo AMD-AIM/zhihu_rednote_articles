@@ -1,117 +1,138 @@
-# AMD GPU 硬件入门：RDNA、CDNA、独显和 APU 有什么区别
+# AMD GPU/APU AI 架构入门：CU、Vector Core 和 Shared Memory 怎么工作
 
 - **平台**：知乎
 - **类型**：基础内容（第 2 篇）
-- **来源**：AMD 产品页、AMD 架构页、ROCm 7.14 文档与本地机器环境
-- **数据依据**：R9700 / gfx1201 与 Ryzen AI Max+ 395 / gfx1151 本地环境记录，2026-08-05 核对官方资料
-- **配图**：`images/` 下 2 张概念图，已插入正文
+- **来源**：ROCm Certification Level 1、AMD RDNA 文档、HIP 7.14 文档与本地实测
+- **数据依据**：R9700 / gfx1201 与 Ryzen AI Max+ 395 / gfx1151 的 `rocminfo` 输出，2026-08-05
+- **配图**：`images/` 下 3 张架构图与实测输出图
 
 ---
 
 ## 标题
 
-**AMD GPU 硬件入门：RDNA、CDNA、独显和 APU 有什么区别**
+**AMD GPU/APU AI 架构入门：CU、Vector Core 和 Shared Memory 怎么工作**
 
 ## 正文
 
-第一次接触 AMD GPU，R9700、RDNA 4、gfx1201 和 ROCm 7.14 很容易被当成一串型号。它们处在不同层级：R9700 是产品型号，RDNA 4 是 GPU 架构，gfx1201 是编译目标，ROCm 7.14 是软件版本。
+我第一次看 R9700 的 `rocminfo` 输出时，最先注意的是 gfx1201。继续往下，同一份输出还列出了 64 个 Compute Unit、每个 CU 2 个 SIMD、32 线程的 Wavefront，以及 64KB GROUP Memory。
 
-刚开始用 AMD GPU 跑 AI，先要分清 RDNA 与 CDNA、独显与 APU、独立显存与统一内存，以及架构和 ROCm 支持的关系。这些概念用于核对硬件与支持组合，不用于性能对比或购买推荐。
+gfx 告诉编译器为哪种 GPU 生成代码，后面这些字段描述设备的执行组织和资源上限。顺着 AI 算子的执行路线，可以把 Workgroup、Wavefront、Compute Unit、Vector / Matrix 运算和 Shared Memory 连起来。
 
-### 一、从产品名到 gfx 是四层
+### 一、一个 AI 算子怎么进入 GPU
 
-我手边有两种搭载 AMD GPU 的硬件形态：
+以矩阵乘法为例，PyTorch 不会把整个矩阵交给一个核心串行计算。底层 Kernel 会把任务拆成大量 Work-item，每个 Work-item 负责一部分数据。
 
-- Radeon AI PRO R9700：独立工作站显卡，RDNA 4 架构，gfx1201。
-- Ryzen AI Max+ 395：带 Radeon 8060S 集成 GPU 的 APU，RDNA 3.5 架构，gfx1151。
+Grid 是一次 Kernel 启动的全部工作，Grid 再分成多个 Workgroup。一个 Workgroup 内的 Work-item 可以同步，也可以通过 LDS 交换数据。
 
-![R9700 与 Ryzen AI Max+ 395 的四层信息关系](images/01-four-levels.png)
+Work-item 到达硬件后不会逐个调度。GPU 把它们组成 Wavefront，让一组线程执行同一条指令、处理各自的数据。这种方式称为 SIMT。
 
-四个层级分别回答不同问题：
+![AI 算子进入 AMD GPU 的执行路线](images/01-ai-execution-path.png)
 
-| 层级 | 回答的问题 | 例子 |
+### 二、Compute Unit 里面有什么
+
+Compute Unit，简称 CU，是 AMD GPU 组织计算资源的核心单元。RDNA 还会把两个 CU 及其相关资源组成一个 Workgroup Processor，简称 WGP。
+
+我在 R9700 和 Radeon 8060S 的 `rocminfo` 中都看到每个 CU 报告 2 个 SIMD。`rocminfo` 报告的是 SIMD 数，AMD 文档用 Vector ALU 表示向量算术路径。本文把 Vector Core 作为这条路径的通俗称呼，它不是一个独立的 `rocminfo` 字段。
+
+| CU / WGP 资源 | 主要工作 | 与 AI 的关系 |
 |---|---|---|
-| 产品型号 | 手里的具体产品是什么 | R9700、Ryzen AI Max+ 395 |
-| 产品形态 | GPU 在独立显卡还是处理器中 | 工作站独显、APU 集成 GPU |
-| GPU 架构 | GPU 内部采用哪一代设计 | RDNA 4、RDNA 3.5、CDNA 3 |
-| gfx / LLVM Target | 编译器为哪种 GPU 生成代码 | gfx1201、gfx1151、gfx942 |
+| SIMD / Vector ALU | 对一组数据执行向量算术 | 激活函数、归一化、逐元素运算等会使用向量计算 |
+| WMMA 矩阵乘加 | 让一个 Wavefront 协作计算矩阵 tile | GEMM、MLP 和 Attention 中有大量矩阵乘加 |
+| Scalar ALU | 处理一个 Wavefront 共享的标量和控制信息 | 地址、循环和分支中相同的部分不必每线程重复计算 |
+| VGPR / SGPR | 保存线程和 Wavefront 正在使用的数据 | 寄存器占用会影响一个 CU 能同时驻留多少个 Wavefront |
+| WGP 中的 LDS | 同一 Workgroup 可共享的片上存储 | 复用矩阵 tile，减少反复读取外部内存 |
 
-完整的产品型号与 gfx 映射，可查看 [一文讲清AMD GPU 显卡型号及其代号gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)。这里不再重复整张对照表。
+![RDNA WGP 与 Compute Unit 简化结构](images/02-rdna-cu.png)
 
-### 二、RDNA 与 CDNA 对应不同产品线
+R9700 使用 RDNA 4。AMD GPUOpen 资料显示，RDNA 4 的 WMMA 会让整个 Wavefront 协作完成矩阵乘加，并支持 FP16 / BF16、FP8 / BF8、INT8 / INT4 等 AI 常用数据类型。
 
-AMD 官方把 CDNA 称为面向 GPU 计算的专用架构，用在 AMD Instinct 产品中，目标包括 AI 和高性能计算。
+Ryzen AI Max+ 395 的 Radeon 8060S 使用 RDNA 3.5。它同样以 CU、SIMD 和 Wavefront 组织计算，但具体指令由 gfx1151 对应的机器码决定，不能把 RDNA 4 的 WMMA 参数直接套过来。
 
-RDNA 主要用在 Radeon RX、Radeon PRO，以及 Ryzen APU 的集成 GPU 中。它的主要设计目标包括游戏、创作和专业图形应用；新一代 RDNA 同时带有 AI 加速单元。
+### 三、Wavefront 怎样隐藏等待时间
 
-| | RDNA | CDNA |
+RDNA 主要使用 Wave32，也支持 Wave64。我测试的 R9700 和 Radeon 8060S 都报告 Wavefront Size 32、每个 CU 最多驻留 32 个 Wavefront。
+
+Wave32 表示 32 个 Work-item 组成一个 Wavefront。它们共享一条指令流，但各自拥有数据和寄存器。
+
+当一条 Wavefront 等待内存数据时，CU 可以调度另一条已经就绪的 Wavefront。GPU 不一定让单个线程更快，而是用大量驻留任务覆盖等待时间，这就是 latency hiding。
+
+由此可以得到两个直接结果：
+
+- 同一 Wavefront 内出现不同分支时，硬件需要分别执行不同路径，部分 lane 暂时不工作。
+- Kernel 占用太多寄存器或 LDS 时，CU 能同时容纳的 Wavefront 会减少，隐藏延迟的空间也会变小。
+
+### 四、Shared Memory 在 AMD GPU 里是什么
+
+GPU 编程中的 Shared Memory 与 APU 的统一内存不是同一个概念。
+
+HIP 代码中的 `__shared__` 在 AMD 硬件上对应 Local Data Share，简称 LDS。它位于片上，容量比显存小得多，但延迟更低，同一 Workgroup 内的 Work-item 可以共同访问。
+
+矩阵乘法 Kernel 常把全局内存中的 tile 暂存到 LDS，再读入 VGPR 供 SIMD / WMMA 使用。同一块数据如果会被重复使用，放入 LDS 可以减少对外部内存的读取。这种 tiling 也常见于部分卷积和归约 Kernel。
+
+`rocminfo` 把每个 Workgroup 可用的 group-segment 上限显示为 GROUP Memory。我测试的两套环境都显示 64KB：
+
+```text
+Segment:  GROUP
+Size:     64 KB
+```
+
+GROUP 64KB 不代表 WGP 的物理 LDS 总量。它表示单个 Workgroup 在当前软件环境中可申请的 LDS / group-segment 上限。
+
+APU 的统一内存则位于片外。Ryzen AI Max+ 395 的 CPU 与 Radeon 8060S 共享 LPDDR5x 物理内存；BIOS 还可以从中专门划出一部分给 GPU，称为 carve-out。GTT 决定用户进程可以映射给 GPU 使用的系统内存上限。
+
+因此：
+
+- LDS / HIP Shared Memory 是 Kernel 内部使用的片上共享存储。
+- 统一内存是 CPU 与集成 GPU 共享的物理内存。
+- carve-out 是从统一内存中预留给 GPU 的部分。
+- GTT 是系统内存可映射到 GPU 地址空间的上限，不是另一块物理内存。
+
+它们都可能被简称为共享内存，但所在层级和用途不同。
+
+### 五、消费级独显和 APU 差在哪
+
+R9700 和 Ryzen AI Max+ 395 都使用 RDNA 架构，也都能运行 AI Kernel。两者最明显的差别在计算资源规模和外部内存路径。
+
+| 本地环境 | R9700 | Ryzen AI Max+ 395 |
 |---|---|---|
-| 常见产品 | Radeon RX、Radeon PRO、Ryzen APU 集成 GPU | AMD Instinct |
-| 官方主要定位 | 游戏、创作与专业图形 | 数据中心 AI 与高性能计算 |
-| 本文实例 | R9700、Radeon 8060S | 不展开具体 MI 型号 |
+| GPU | Radeon AI PRO R9700 | Radeon 8060S |
+| 架构 / gfx | RDNA 4 / gfx1201 | RDNA 3.5 / gfx1151 |
+| Compute Unit | 64 | 40 |
+| SIMD per CU | 2 | 2 |
+| Wavefront Size | 32 | 32 |
+| GROUP Memory | 64KB | 64KB |
+| 外部内存 | 32GB 独立 GDDR6 | CPU / GPU 共享 LPDDR5x |
 
-RDNA 不等于只能做图形。我在上一篇 HuggingFace 实测中使用的 R9700 就是 RDNA 4，PyTorch 和 Transformers 可以直接调用。CDNA 也不能简化成只做训练，具体能力仍取决于产品和软件栈。
+R9700 有独立显存，CPU 数据通常需要经过 PCIe 进入 GPU 显存。Ryzen AI Max+ 395 没有另一套独立 GDDR 显存芯片，Radeon 8060S 通过 GPUVM 使用共享 LPDDR5x；用户态 AI 分配可以通过 GTT 动态映射，BIOS carve-out 则是另行预留的区域。
 
-### 三、独显有自己的显存，APU 与 CPU 共享物理内存
+统一内存改变的是 CPU / GPU 的物理内存关系与映射方式，不会把 40 个 CU 变成 64 个 CU，也不代表 APU 一定比独显快。反过来，独显的 32GB 固定显存也不能单独说明某个模型的实际速度。
 
-R9700 是独立显卡。AMD 产品页列出的规格是 32GB GDDR6 独立显存。它和 CPU 使用的系统内存是两个物理内存池。
+### 六、用 rocminfo 看本机架构
 
-Ryzen AI Max+ 395 是 APU。CPU 与 Radeon 8060S 集成 GPU 使用同一套 LPDDR5x 物理内存，产品最高支持 128GB 统一内存。
+运行：
 
-![R9700 独立显存与 Ryzen AI Max+ 395 统一内存](images/02-memory-model.png)
+```bash
+rocminfo | grep -E \
+'Marketing Name|Compute Unit|SIMDs per CU|Wavefront Size|Max Waves Per CU'
+rocminfo | grep -A 2 'Segment:.*GROUP'
+```
 
-统一内存不等于固定 128GB 显存。几个数字代表不同口径：
+![R9700 与 Radeon 8060S 的 rocminfo 架构字段](images/03-rocminfo-fields.png)
 
-| 数字或术语 | 含义 |
-|---|---|
-| 最高 128GB | 产品支持的最大统一系统内存 |
-| 最多 112GB 可由 GPU 分配 | AMD 技术文章给出的 GPU 可分配上限 |
-| 最多 96GB Variable Graphics Memory | BIOS 可以预留成 VRAM carve-out 的上限 |
-| GTT | 用户进程可以映射给 GPU 使用的系统内存范围 |
+我在两台机器上的输出如图。Compute Unit、SIMDs per CU、Wavefront Size 和 GROUP Memory 分别对应文章里的 CU、向量执行单元、Wavefront 和 LDS。完整型号、gfx 与 ROCm 支持关系可参考 [一文讲清AMD GPU 显卡型号及其代号gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)。
 
-我测试的 Ryzen AI Max+ 395 在 Linux 中显示约 124GiB 物理内存，当前显示 2GB VRAM carve-out，GTT 映射上限为 120GB。这不代表它有 122GB 独立显存，而是 GPU 可以通过不同方式使用同一个物理内存池。
+架构资料核对至 2026-08-05。不同 RDNA 代次的 SIMD、Wavefront 和矩阵指令细节可能不同，不能把 MI300X / CDNA 的参数直接套到消费级 GPU 或 APU。
 
-我测试的 R9700 则显示固定 32GB 独立显存。两种内存方式的物理关系不同，不能只看容量数字判断性能。
-
-### 四、知道架构和 gfx，仍不能直接推出 ROCm 支持
-
-ROCm 文档把 gfx 称为 LLVM Target。它告诉编译器应该为哪一种 GPU 架构生成代码。
-
-相同 gfx 只说明编译目标相同，不代表所有产品与操作系统组合都受到同样支持。实际使用时还要同时核对：
-
-1. 完整 GPU 或 APU 型号。
-2. Linux、Windows 或 WSL 版本。
-3. ROCm 版本。
-4. PyTorch、vLLM 等上层框架的支持范围。
-
-相同 gfx 不代表 WSL 支持状态相同，仍须按具体型号查询对应 ROCm 版本的兼容性矩阵。
-
-### 五、跑 AI 前先核对这五项
-
-| 检查项 | 要确认什么 |
-|---|---|
-| 完整产品型号 | 不只看 Radeon、RX 7000 或 Ryzen AI |
-| 产品形态 | 独立显卡还是 APU 集成 GPU |
-| 内存方式 | 固定独立显存，还是统一内存加 carve-out / GTT |
-| gfx 号 | 安装包和代码编译需要哪个目标 |
-| 支持组合 | 具体型号 + OS + ROCm + 框架是否匹配 |
-
-把这五项分开后，查文档会清楚很多：产品型号决定查哪一行，gfx 决定代码和 wheel 面向哪个架构，兼容性矩阵决定当前系统组合是否在官方支持范围内。
-
-以上官方资料核对于 2026-08-05。ROCm 支持范围会随版本变化，安装前应再次查看当前版本的兼容性矩阵。
-
-#AMD #ROCm #GPU #显卡 #RDNA #CDNA #统一内存 #人工智能
+#AMD #ROCm #GPU架构 #RDNA #APU #ComputeUnit #人工智能
 
 ## 首评
 
 参考资料：
 
-- [AMD RDNA Architecture](https://www.amd.com/en/technologies/rdna.html)
-- [AMD CDNA Architecture](https://www.amd.com/en/technologies/cdna.html)
+- [ROCm Device hardware glossary](https://rocm.docs.amd.com/en/latest/reference/glossary/device-hardware.html)
+- [HIP Hardware implementation](https://rocm.docs.amd.com/projects/HIP/en/latest/understand/hardware_implementation.html)
+- [AMD GPUOpen：Occupancy explained](https://gpuopen.com/learn/occupancy-explained/)
+- [AMD GPUOpen：Accelerating Generative AI on AMD Radeon GPUs](https://gpuopen.com/learn/accelerating_generative_ai_on_amd_radeon_gpus/)
+- [AMD GPUOpen：Using Matrix Cores of RDNA 4](https://gpuopen.com/learn/using_matrix_core_amd_rdna4/)
 - [AMD Radeon AI PRO R9700 产品页](https://www.amd.com/en/products/graphics/workstations/radeon-ai-pro/ai-9000-series/amd-radeon-ai-pro-r9700.html)
 - [AMD Ryzen AI Max+ 395 产品页](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html)
-- [AMD Ryzen AI Max+ 395 统一内存技术文章](https://www.amd.com/en/developer/resources/technical-articles/2025/amd-ryzen-ai-max-395--a-leap-forward-in-generative-ai-performanc.html)
-- [AMD Variable Graphics Memory FAQ](https://www.amd.com/en/blogs/2025/faqs-amd-variable-graphics-memory-vram-ai-model-sizes-quantization-mcp-more.html)
-- [ROCm 7.14 RDNA3.5 system optimization](https://rocm.docs.amd.com/en/docs-7.14.0/reference/system-optimization/rdna3-5.html)
-- [ROCm 7.14 Compatibility matrix](https://rocm.docs.amd.com/en/docs-7.14.0/compatibility/compatibility-matrix.html)
-- [ROCm 7.14 hardware support](https://rocm.docs.amd.com/en/docs-7.14.0/about/release-notes.html#amd-hardware-support)
