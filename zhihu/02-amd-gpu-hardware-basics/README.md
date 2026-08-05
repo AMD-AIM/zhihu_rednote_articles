@@ -104,6 +104,8 @@ R9700 有独立显存，CPU 数据通常需要经过 PCIe 进入 GPU 显存。Ry
 
 统一内存改变的是 CPU / GPU 的物理内存关系与映射方式，不会把 40 个 CU 变成 64 个 CU，也不代表 APU 一定比独显快。反过来，独显的 32GB 固定显存也不能单独说明某个模型的实际速度。
 
+想进一步了解 APU 的统一内存配置和本地大模型实践，可以参考 [AI Inference on AMD Ryzen™ AI Max Processor](https://rocm.blogs.amd.com/artificial-intelligence/ryzen-uma-llm/README.html)。
+
 ### 用 rocminfo 看本机架构
 
 运行：
