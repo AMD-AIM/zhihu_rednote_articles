@@ -1,12 +1,28 @@
-# 从 gfx 到第一个 GPU Tensor：AMD ROCm 7.14 + PyTorch 安装指南
+# AMD GPU怎么跑PyTorch？从查gfx到跑通第一个Tensor（ROCm 7.14实战）
 
-本文包括先按完整型号查 gfx 与操作系统支持，再装PyTorch，最后用一次真实张量计算确认 GPU 可用。
+如果你第一次接触 AMD GPU 跑 AI，大概率会遇到这些问题：
+
+我的 RX 7800 XT 支持 ROCm 吗？
+为什么网上都说先查 gfx？
+ROCm 装完后，怎么确认真的在调用 GPU？
+torch.cuda.is_available() 为什么还是 False？
+Windows 和 WSL2 到底选哪个？
+
+我会按照自己从零搭建 ROCm 环境的顺序，带你完成下面这件事：
+
+从查显卡 gfx 代号开始，到安装ROCm，到安装 PyTorch，最后让 GPU 成功完成第一次 Tensor 计算。
 
 我以 ROCm Core SDK 7.14.0 与 PyTorch 2.12.0 为主线，重点写原生 Linux，也保留 Windows、WSL2、Docker 和官方表外显卡的分流。硬件、系统和版本信息已按 2026-08-04 的官方页面复核；建议读者打开[文末参考资料](#参考资料)按自己的完整型号再查一次。
 
-本文的数据来源是：AMD release notes 与兼容性矩阵用于硬件和系统支持；PyTorch 安装页用于版本与安装命令；TheRock 用于 nightly 目标。
-
 ## ROCm安装的所有路径
+ROCm安装前，先确定你属于哪一类用户
+
+事实上 ROCm 不只有一种安装方式。
+① Linux 用户适合：PyTorch 开发、模型训练、长期使用。
+② Docker 用户适合：不想污染系统环境、需要复现依赖环境。Docker 只能隔离 Python 等用户态依赖，不能代替宿主机显卡驱动。
+③ Windows 用户适合：ROCm 7.14 官方支持表中明确列出的部分 Radeon AI PRO 和 RX 9000 型号；安装前必须按完整型号确认。
+④ WSL2 用户适合：想保留 Windows 桌面、同时使用 Linux 开发环境。前提是显卡、Windows 驱动和 Ubuntu 版本都在官方支持范围内。
+⑤ 官方未支持显卡可尝试：TheRock Nightly，但这是实验路线，稳定性和兼容性需要自行验证。
 
 ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作系统 × 内核或驱动 × 框架版本。下面先列出全部常见路径，再决定该复制哪一段命令。
 
@@ -19,7 +35,7 @@ ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作�
 | TheRock nightly | AMD 上游 nightly；有编译产物不等于发布版验证 | 官方表外显卡的个人验证 | 没有发布版 SLA，版本可能回归 |
 | DirectML 或 Vulkan | 替代后端，不属于 ROCm 官方 PyTorch 路径 | Windows 或老卡上的本地推理，尤其是 llama.cpp 一类程序 | 训练、自定义 HIP 算子与算子覆盖不能按 ROCm 预期 |
 
-我的建议是：官方支持的设备优先在原生 Linux 中通过 pip 安装；需要隔离依赖时，再使用官方 Docker 镜像。先核对显卡型号、系统、内核、驱动和 PyTorch 安装参数；官方路径仍无法满足需求，再尝试 TheRock 等社区构建，最后才考虑更换硬件。即使 gfx 相同，Windows、WSL2 与 Linux 的支持状态也可能不同。
+我的建议是：官方支持的设备优先在原生 Linux 中通过 pip 安装或者使用官方 Docker 镜像隔离环境。先核对显卡型号、系统、内核、驱动和 PyTorch 安装参数；官方路径仍无法满足需求，再尝试 TheRock 等社区构建。即使 gfx 相同，Windows、WSL2 与 Linux 的支持状态也可能不同，, 后文会讲到。
 
 ## 先查完整 gfx：device extra 从这里取值
 
@@ -79,9 +95,9 @@ ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作�
 
 注意：
 
-1. R9700 与 R9600D 同为 gfx1201，WSL2 结论不同。
-2. RX 9060 XT 与 RX 9060 XT LP 同为 gfx1200，WSL2 结论不同。
-3. Ryzen AI 9 HX PRO 375 与 475 同为 gfx1150，WSL2 结论不同。
+1. R9700 与 R9600D 同为 gfx1201，WSL2 结论相反(一个支持WSL2，一个不支持WSL2)。
+2. RX 9060 XT 与 RX 9060 XT LP 同为 gfx1200，WSL2 结论相反。
+3. Ryzen AI 9 HX PRO 375 与 475 同为 gfx1150，WSL2 结论相反。
 
 ## 安装PyTorch前
 
@@ -104,7 +120,7 @@ pip 安装成功，只代表 Python 包和部分依赖已装好，不代表 ROCm
 
 ### 第一步：创建隔离的 Python 环境
 
-ROCm 7.14.0 的官方 PyTorch 页面支持 Python 3.11 到 3.14。下面使用系统 python3；如果它是 Python 3.10 或更早版本，我建议换用受支持的解释器或 Docker。
+ROCm 7.14.0 的官方 PyTorch 页面支持 Python 3.11 到 3.14。
 
 Ubuntu 先补齐虚拟环境与运行库：
 
@@ -120,7 +136,7 @@ Ubuntu 先补齐虚拟环境与运行库：
     . .venv/bin/activate
     python -m pip install --upgrade pip
 
-看到 .venv 且 python --version 在 3.11 到 3.14 范围内，就可以继续。以后使用前先运行 . .venv/bin/activate。
+看到 .venv 且 python --version 在 3.11 到 3.14 范围内，就可以继续。以后使用前先进入该虚拟环境。
 
 ### 第二步：安装与 gfx 匹配的 PyTorch
 
@@ -135,7 +151,7 @@ ROCm 7.14.0 的 Python 仓库采用 multi-arch。索引地址不再区分 gfx，
 
 这三个版本号必须成组使用，不要根据包名或 gfx 自行凑版本。
 
-下表来自官方安装页。较旧组合不一定覆盖每个 gfx 和操作系统，最终以安装页选择器为准。
+下表来自[官方安装页](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html)。较旧组合不一定覆盖每个 gfx 和操作系统，最终以安装页选择器为准。
 
 | torch | torchvision | torchaudio | 使用边界 |
 | --- | --- | --- | --- |
@@ -147,7 +163,6 @@ ROCm 7.14.0 的 Python 仓库采用 multi-arch。索引地址不再区分 gfx，
 
 - torch 与 torchvision 必须带 device-gfxXXXX，才能拉到对应架构的 device 代码。
 - torchaudio 不带 device extra。
-- 不要先自行安装另一套 rocm Python 元包。先完成安装页要求的宿主机前置条件，再使用这条官方命令解析依赖。
 
 ### device-all 什么时候才值得装
 
@@ -243,11 +258,9 @@ Docker 只能隔离用户态依赖，不能替宿主机安装 AMD GPU 驱动。�
 
 ## 官方表外的显卡：TheRock nightly 路径
 
-### TheRock nightly
+如果显卡不在 ROCm 7.14.0 官方硬件表中，可以查询 TheRock 的 nightly 构建。它提供更多 gfx 的编译产物，适合在新的虚拟环境中验证。
 
-如果显卡不在 ROCm 7.14.0 官方硬件表中，可以查询 TheRock 的 nightly 构建。它提供更多 gfx 的编译产物，适合在新的虚拟环境中验证；但它不等于官方发布版支持，也不能保证全部算子、框架和模型都可用。
-
-下表来自 [TheRock RELEASES.md](https://github.com/ROCm/TheRock/blob/54d14392b27167b862bf5747f1d8cd1b13a4b23c/RELEASES.md)，固定于 2026-08-04 的提交。后续 nightly 可能变化。
+下表来自 [TheRock RELEASES.md](https://github.com/ROCm/TheRock/blob/54d14392b27167b862bf5747f1d8cd1b13a4b23c/RELEASES.md)。
 
 | nightly device extra | 覆盖的卡或 iGPU | 边界 |
 | --- | --- | --- |
@@ -271,7 +284,7 @@ Docker 只能隔离用户态依赖，不能替宿主机安装 AMD GPU 驱动。�
         'torchvision[device-gfx1031]' \
         torchaudio
 
-### 非 ROCm 备选路径：DirectML 与 llama.cpp Vulkan
+## 非 ROCm 备选路径：DirectML 与 llama.cpp Vulkan
 
 - Windows 上可评估 [PyTorch with DirectML](https://github.com/microsoft/DirectML)。它是 Microsoft 的 DirectX 12 后端，不属于 ROCm。DirectML 已进入维护模式，PyTorch 版本和算子覆盖有限；推理、训练和性能都应按项目单独验证。
 - 对 llama.cpp 等本地大模型推理程序，可评估 llama.cpp 的 [Vulkan 后端](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)。它适合本地推理，不是通用 PyTorch 后端，也不能替代 HIP 自定义算子或 PyTorch 训练。
@@ -294,12 +307,11 @@ Docker 只能隔离用户态依赖，不能替宿主机安装 AMD GPU 驱动。�
 
 ## 小结
 
-我把流程压缩成四步：
+我把流程压缩成三步：
 
-1. 用完整型号确认 gfx，并在对应操作系统的矩阵中确认支持状态；
-2. 在隔离 venv 中安装带 device-gfxXXXX 的官方 PyTorch 三件套；
-3. 官方设备优先走原生 Linux pip；Docker 仅用于隔离依赖。官方表外显卡可用 TheRock nightly 验证，DirectML 和 Vulkan 属于替代后端。
-4. 以实际 GPU 张量计算验证：torch.cuda.is_available() 为 True、HIP 非空，并完成一次矩阵乘法。原生 Linux 可用 device 包、/dev/kfd 和 rocminfo 排查；Windows 与 WSL2 同样要运行 [PyTorch 验证](#PyTorch验证：用两个检查确认不是空装)。
+1. 先查显卡完整型号，再查对应的 gfx。
+2. 安装 PyTorch 时，必须使用与自身架构对应的 device-gfxXXXX。
+3. 不要只看 pip install 成功；必须确认 torch.cuda.is_available() == True，并完成一次 Tensor 计算。
 
 这只能证明基础 GPU 执行链路已经打通，不代表显存容量和性能足以满足实际模型。后续应根据模型大小、量化精度、上下文长度和 batch 大小，选择量化、offload 或合适的推理框架。Docker 只用于隔离依赖，不能增加显存；软件方案仍不能满足需求时，再考虑升级硬件。
 
@@ -318,3 +330,5 @@ Docker 只能隔离用户态依赖，不能替宿主机安装 AMD GPU 驱动。�
 - 用户态依赖：是普通程序运行时使用的库和工具，不直接控制硬件。包括Python 与 venv；PyTorch、torchvision、torchaudio；ROCm 的 HIP、rocBLAS 等用户态库；模型代码和 Python 依赖。相对的是内核态驱动，例如 amdgpu、KFD。它负责直接管理 GPU、创建 /dev/kfd 等设备节点，必须装在宿主机系统里。
 - ROCDXG：WSL 内的 ROCm 桥接库，用于让 Ubuntu 中的 ROCm 程序使用 Windows 主机的 AMD GPU 驱动。
 - SLA：Service Level Agreement，服务级别协议或服务承诺。nightly 不享受官方发布版的稳定性、兼容性、修复和问题响应承诺，更新后可能出现回归。
+
+### 我会为大家持续更新AMD GPU,ROCm和本地AI相关内容哦~
