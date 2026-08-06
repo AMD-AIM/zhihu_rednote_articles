@@ -311,7 +311,6 @@ Docker 只能隔离用户态依赖，不能替宿主机安装 AMD GPU 驱动。�
 - [ROCm 7.14.0 的 PyTorch 安装页，滚动页面](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html)
 - [TheRock supported GPUs，2026-08-04 快照](https://github.com/ROCm/TheRock/blob/54d14392b27167b862bf5747f1d8cd1b13a4b23c/SUPPORTED_GPUS.md)
 - [TheRock RELEASES.md，2026-08-04 快照](https://github.com/ROCm/TheRock/blob/54d14392b27167b862bf5747f1d8cd1b13a4b23c/RELEASES.md)
-- [TheRock #5289](https://github.com/ROCm/TheRock/issues/5289)
   
 ## 名词解释
 
