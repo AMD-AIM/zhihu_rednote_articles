@@ -48,7 +48,7 @@ ROCm 安装不是只分显卡型号。完整判断条件是具体 SKU × 操作�
 | gfx1103 | device-gfx1103 |
 | 所有发布版架构 | device-all |
 
-## 安装Rocm
+## 安装ROCm
 
 光靠gfx号不能推出安装的环境要求, 需要根据下面这张表查询。
 下表按 ROCm 7.14.0 分支的[安装选择器](https://rocm.docs.amd.com/en/docs-7.14.0/install/rocm.html)整理。最后仍要在 [兼容性矩阵](https://rocm.docs.amd.com/en/docs-7.14.0/compatibility/compatibility-matrix.html) 选择完整 SKU 复核。完整型号决定设备支持，操作系统、驱动和 WSL2 状态还要单独核对。
