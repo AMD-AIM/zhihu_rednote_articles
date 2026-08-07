@@ -9,120 +9,88 @@
 - **范围**：产品家族与软件层级的工程匹配，不做具体型号排行和跨硬件性能比较
 -->
 
-同样是跑一个大模型，本地单人对话、在线并发服务和微调，对软硬件的要求并不相同。只按训练或推理两个标签分类，容易漏掉更先决定组合的变量：模型规模、精度、上下文、batch、并发，以及是否需要跨卡。
+都是跑大模型，但本地跑个对话、线上扛并发、做一轮微调，对软硬件的要求差别很大。光用"训练"和"推理"两个标签来分，粒度太粗——模型多大、什么精度、上下文多长、batch 开多少、要不要跨卡，这些才是先要确定的东西。
 
-判断时可以沿着一条路径往下走：
+### 先把训练和推理拆细一点
 
-```text
-工作负载
-→ 资源约束
-→ 硬件形态
-→ 软件层级
-→ 兼容性与运行验证
-```
+"训练"和"推理"各自还能再分。下面四个场景经常互相重叠——本地推理也可能开长上下文和并发，单卡微调可以是 LoRA 也可以是全参数——但每个场景首先要确认的事情不一样：
 
-### 先把训练和推理继续拆开
-
-下表中的四个代表场景可能互相重叠，但首先要问的问题不同。
-
-| 代表场景 | 首先确认什么 |
+| 场景 | 首先搞清楚什么 |
 |---|---|
-| 本地推理 | 模型权重、上下文、同时运行的请求数和延迟目标 |
-| 高并发服务 | 活跃序列、KV Cache、batch、吞吐和服务稳定性 |
-| 单卡微调 | 微调方法、精度、微批次、上下文和需要训练的参数范围 |
-| 多卡训练与推理 | 模型规模、全局 batch、并行方式，以及是否跨卡或跨节点 |
+| 本地推理 | 模型多大、上下文多长、同时跑几路请求、延迟能接受多少 |
+| 高并发服务 | 活跃序列数、KV Cache 占用、batch 大小、吞吐目标、稳定性要求 |
+| 单卡微调 | 用什么微调方法、什么精度、微批次多大、上下文多长、训练多少参数 |
+| 多卡训练与推理 | 模型总规模、全局 batch、怎么并行，跨卡还是跨节点 |
 
-本地推理也可能使用长上下文和并发请求；单卡微调既可能是 LoRA，也可能是全参数训练。任务画像越具体，后面的硬件与软件范围越容易收窄。
+需求定得越具体，后面硬件和软件就越好排除。
 
-### 先确认任务能不能放下
+### 第一步：装不装得下
 
-内存容量是第一个可行性门槛，但不能只看模型文件大小。
+内存容量是最先要过的关，但不能只看模型文件多大。
 
-推理时至少要容纳模型权重、KV Cache 和运行时临时空间。上下文变长、同时活跃的序列增加，KV Cache 和调度压力也会增加。
+推理时显存里至少要放三样东西：模型权重、KV Cache、运行时临时空间。
+特别是KV Cache：上下文变长、同时活跃的序列变多，KV Cache 就会膨胀，调度压力也跟着上来。
 
-训练还要保存反向传播需要的状态：
+训练比推理吃显存多得多。除了权重本身，还得保存梯度、优化器状态（比如 Adam 的一阶和二阶动量）、反向传播过程中保留的激活，以及算子的临时张量和工作区。
+粗略说，全参数 FP16 训练的显存峰值可以到权重本身的三到四倍甚至更高[^1][^2]，具体取决于 batch 大小和上下文长度。
 
-- 模型权重；
-- 可训练参数的梯度；
-- 优化器状态；
-- 为反向传播保留的激活；
-- 算子临时张量和工作区。
+LoRA 倒是把基础权重冻结了，只训练低秩适配器[^3]，所以需要算梯度、存优化器状态的参数量大幅减少。但基础模型本身还在显存里，训练过程中的激活也还在，并不是"模型多大就只占多大"。
+QLoRA 进一步把冻结的基础权重量化压缩[^4]，不过计算时的中间精度和状态要看具体实现，不能一概而论。
 
-典型 LoRA 配置会冻结基础权重，主要训练低秩适配器，因此减少梯度和优化器状态的覆盖范围；实际仍以训练库报告的 trainable parameters 为准，基础模型和训练激活也仍然存在。QLoRA 进一步压缩冻结基础模型的存储，但计算精度和中间状态需要按具体实现分别确认。
-
-容量通过以后，再用目标模型的实际运行或 profiling 判断当前阶段更受内存带宽还是矩阵计算限制，两者没有固定先后。只要模型或吞吐目标需要跨卡，并行方式、通信量和互联就必须同时进入判断。
+确认装得下之后，下一步是看瓶颈在哪：是带宽不够、数据喂不快；还是算力不够、矩阵乘算不动。
+这两个没有固定先后，得拿目标模型实际跑一下或做 profiling 才能判断。
+如果单卡放不下，或者吞吐目标要求多卡，那并行策略、卡间通信量、互联带宽就得一起考虑了。
 
 ### 几类 AMD 硬件形态差在哪
 
-AMD 的几类硬件首先按内存和部署形态区分，不按一条简单的快慢顺序排列。
+AMD 这几类产品不是简单的高低档排列，核心区别在于显存从哪来、有多少、软件支持到什么程度。
 
-- **Ryzen AI Max 这类 APU**：CPU 与集成 GPU 共享 LPDDR5x 物理内存。Linux 应用通过 GPUVM / GTT 动态映射共享内存，BIOS carve-out 则是另行固定预留的区域。需要核对系统实际内存、GPU 可用口径和具体框架支持。
-- **Radeon 消费级独显**：GPU 使用独立 GDDR6，本地显存容量固定。需要按完整型号核对当前 ROCm、OS 和框架支持。
-- **Radeon AI PRO**：工作站级独显，例如 Radeon AI PRO R9700 配有 32GB GDDR6，面向本地 AI 开发和推理。进入多卡工作站后，还要核对拓扑和软件并行方式。
-- **AMD Instinct**：数据中心 GPU 使用 HBM，并提供平台互联和扩展能力，同时覆盖训练、推理和 HPC。
+**Ryzen AI Max 这类 APU**没有独立显存，CPU 和集成 GPU 共用一块 LPDDR5x 物理内存。那 GPU 到底能用到多少？取决于两件事：一是运行时动态映射过来的部分（GPUVM / GTT），二是 BIOS 里预先划出来的固定区域（carve-out）。所以实际可用量要看系统总内存、BIOS 怎么设的、框架支不支持，三个一起确认。[^5]
+**Radeon 消费级独显**有自己的 GDDR6 显存，容量买的时候就定了。但同一代架构的不同型号，ROCm 和框架的支持状态可能不一样，得按完整型号去查。
+**Radeon AI PRO** 是工作站级独显，比如 R9700 带 32GB GDDR6[^6]，定位本地 AI 开发和推理。如果一台工作站里插多卡，还要看卡之间的拓扑结构，以及软件层面支持哪种并行方式。
+**AMD Instinct** 是数据中心用的[^7]，用 HBM，带宽和容量都比 GDDR 高一个量级，有平台级的互联和扩展能力，训练、推理、HPC 都能覆盖。
 
-统一内存 APU 的容量来自共享系统内存，独显和 Instinct 则使用本地 GDDR 或 HBM。内存形态、软件支持和工作负载共同决定候选范围，架构名称本身不对应固定用途。
+总之不能光看架构叫 RDNA 还是 CDNA 就下结论，得看具体型号内存够不够、软件支不支持你要跑的东西[^8]。
 
 ### 软件不是一个 ROCm 版本号
 
-一个可运行组合至少包含：
+硬件选完还只是一半。要真正跑起来，软件这边有好几层要对上：你的卡是什么完整型号、操作系统和内核驱动装的什么版本、ROCm 用户态是哪个版本、上面跑的框架是什么、这个场景还需要哪些额外的库。哪一层没对上都可能出问题。
 
-```text
-完整设备型号
-→ OS / 内核驱动
-→ ROCm 用户态
-→ 框架或运行时
-→ 场景需要的库
-```
+而且不同任务走的软件路径不一样：
 
-不同任务会从不同入口进入：
+- **训练与通用张量推理**一般走 PyTorch。要对的东西比较多：ROCm 版本、PyTorch 版本、Python 版本，还有一个容易漏的——PyTorch 的编译目标（gfx 架构）得跟你的卡匹配。[^9]
+- **LLM 离线批处理和在线服务**可以走 vLLM。vLLM 有自己验证过的 GPU + ROCm + PyTorch + Python 组合，最好直接用它推荐的镜像，自己拼版本容易踩坑。[^10][^11]
+- **本地量化模型运行**可以用 Ollama[^12] 或 llama.cpp[^13]，但有个容易搞混的地方：它们实际走的可能是 HIP/ROCm 后端，也可能是 Vulkan 后端。Vulkan 完全不经过 ROCm 用户态，这是两条不同的路径，哪条能用、效果怎么样，得分开确认。
+- **多 GPU 训练或推理**由框架选并行策略，底层的集合通信——all-reduce、all-gather、reduce-scatter 这些——走 RCCL[^14]。到了这一步，PCIe 还是 xGMI、要不要跨节点，都变成组合的一部分了。
 
-- **训练与通用张量推理**通常从 PyTorch 进入，需要核对 ROCm、PyTorch、Python 和目标 gfx（编译目标）的组合。
-- **LLM 离线批处理和在线服务**可以从 vLLM 进入，需要使用当前验证的 GPU、ROCm、PyTorch、Python 和镜像组合。
-- **本地量化模型运行**可以使用 Ollama 或 llama.cpp，并分别确认实际采用 HIP / ROCm 还是 Vulkan 后端。Vulkan 不经过 ROCm 用户态，两条后端路径需要分开核对。
-- **多 GPU 训练或推理**由框架选择并行策略，RCCL 执行 all-reduce、all-gather、reduce-scatter 等 collective；PCIe / xGMI 和多节点网络也属于组合的一部分。
+还有一个容易忽略的地方：用容器跑的时候，镜像里可以把 Python、ROCm 用户态库、框架和依赖都锁住，但宿主机那边的内核驱动、设备权限、GPU 型号和物理互联，容器是管不了的。验证的时候要把宿主和镜像一起看，不是容器能启动就说明没问题。[^15]
 
-容器可以固定 Python、ROCm 用户态库、框架和应用依赖；宿主机仍负责内核驱动、设备权限、GPU 型号和物理互联。验证组合时要同时查看宿主与镜像，而不是只看容器是否启动。
+### 实际验证怎么做
 
-### 四个代表场景怎样走完这条路径
+先用完整设备型号查出 gfx 编译目标，这是后面所有事的起点。然后去[ROCm 兼容矩阵](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)里核对这个型号支持什么 OS、什么驱动、什么 ROCm 版本。接着看你要用的框架——PyTorch、vLLM、Ollama、llama.cpp 还是别的——版本和后端能不能对上。如果用容器，多一步：先确认宿主机已经能把 GPU 暴露出来，再去管镜像里的用户态环境。最后跑一个最小测试，哪怕就一个 tensor 运算或者最小模型的一次推理，确认调用的确实是 GPU 而不是在走 CPU fallback。
 
-- **本地大模型推理**：根据模型权重、上下文和 KV Cache 得到容量范围，再匹配统一内存 APU 或独立显存 GPU，以及 Ollama、llama.cpp、PyTorch 等实际入口；最后用目标模型的最小链路验证。
-- **单卡微调**：根据典型 LoRA、QLoRA 或全参数微调得到权重、激活、梯度和优化器状态范围，再匹配单设备内存形态、PyTorch 与训练库；最后用最小 batch 完成一次 forward / backward。
-- **高并发服务**：根据活跃序列、KV Cache、batch 和延迟目标得到容量与吞吐约束，再匹配当前 vLLM 验证的 GPU、ROCm、PyTorch、Python 和镜像版本；最后用目标并发做压力验证。
-- **多卡训练与推理**：根据数据并行、参数分片或张量并行得到状态分布和通信量，再匹配服务器或已验证的工作站拓扑、框架策略与 RCCL；最后验证 collective、互联和目标工作负载。
+笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1，通过 `HIP_VISIBLE_DEVICES` 只暴露一张卡，验证过单卡推理。这两条记录只能说明这两个特定环境跑通了，跟当前 ROCm 7.14 的官方支持状态是两回事，不能互相替代。
 
-我在 Ryzen AI Max+ 395 的 ROCm 7.2.3、llama.cpp HIP 环境中验证过 Q4 GGUF 量化模型运行；也在 Radeon AI PRO R9700 的 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1 环境中通过 `HIP_VISIBLE_DEVICES` 只暴露一张 GPU，验证过单卡推理链路。这两条记录只对应各自环境，与当前 ROCm 7.14 的官方支持核对是不同证据。
+说到底，能不能用取决于你的具体设备、软件版本和实际要跑的任务，不是看到 RDNA 或 CDNA 或某个 gfx 代号就能下结论的。
 
-### 最后把组合逐层锁定
-
-确定候选范围后，按下面的顺序核对：
-
-1. 用完整设备型号确认 gfx（编译目标），再进入具体支持查询。
-2. 在当前 [ROCm 兼容矩阵](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html) 中核对型号、OS、驱动与 ROCm。
-3. 再核对 PyTorch、vLLM、Ollama、llama.cpp 或训练库的版本和后端。
-4. 容器场景先确认宿主机已经能暴露 GPU，再固定用户态环境。
-5. 运行最小 Tensor 或目标框架的最小模型链路，确认实际调用 GPU。
-
-最终能否成立，取决于具体设备、软件版本和目标工作负载，而不是 RDNA、CDNA 或一个 gfx 代号单独给出的答案。
-
-具体操作可以继续参考：完整型号与 gfx 的关系见 [一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)；CU、Wavefront、LDS 和独显 / APU 内存路径见 [AMD GPU/APU AI 架构入门](https://zhuanlan.zhihu.com/p/2068399264997315488)；ROCm 与 PyTorch 的安装和最小验证步骤见 [AMD ROCm 与 PyTorch 安装指南](https://github.com/AMD-AIM/zhihu_rednote_articles/blob/main/zhihu/AMD%20ROCm%E4%B8%8EPyTorch%E5%AE%89%E8%A3%85%E6%8C%87%E5%8D%97-%E7%9F%A5%E4%B9%8E%E7%89%88.md)。
+具体操作可以继续参考：完整型号与 gfx 的关系见 [一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)；CU、Wavefront、LDS 和独显 / APU 内存路径见 [AMD GPU/APU AI 架构入门](https://zhuanlan.zhihu.com/p/2068399264997315488)；ROCm 与 PyTorch 的安装和最小验证步骤见 [AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)。
 
 #AMD #ROCm #GPU #APU #PyTorch #大模型 #人工智能
 
 参考资料：
 
-- [ROCm Compatibility matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)
-- [ROCm GPU specifications](https://rocm.docs.amd.com/en/docs-7.14.0/reference/gpu-specs.html)
-- [PyTorch Autograd mechanics](https://docs.pytorch.org/docs/stable/notes/autograd.html)
-- [Hugging Face：Model training anatomy](https://huggingface.co/docs/transformers/model_memory_anatomy)
-- [Hugging Face PEFT：LoRA](https://huggingface.co/docs/peft/main/conceptual_guides/lora)
-- [Hugging Face：bitsandbytes 量化](https://huggingface.co/docs/transformers/main/quantization/bitsandbytes)
-- [vLLM：Optimization and Tuning](https://docs.vllm.ai/en/latest/configuration/optimization/)
-- [vLLM：GPU installation requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)
-- [Ollama GPU support](https://docs.ollama.com/gpu)
-- [llama.cpp build backends](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
-- [ROCm RCCL](https://rocm.docs.amd.com/projects/rccl/en/latest/what-is-rccl.html)
-- [ROCm Docker](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html)
-- [ROCm RDNA 3.5 system optimization](https://rocm.docs.amd.com/en/latest/reference/system-optimization/rdna3-5.html)
-- [AMD Radeon AI PRO R9700](https://www.amd.com/en/products/graphics/workstations/radeon-ai-pro/ai-9000-series/amd-radeon-ai-pro-r9700.html)
-- [AMD Instinct accelerators](https://www.amd.com/en/products/accelerators/instinct.html)
+[^1]: [Hugging Face: Model training anatomy](https://huggingface.co/docs/transformers/model_memory_anatomy)
+[^2]: [PyTorch Autograd mechanics](https://docs.pytorch.org/docs/stable/notes/autograd.html)
+[^3]: [Hugging Face PEFT: LoRA](https://huggingface.co/docs/peft/main/conceptual_guides/lora)
+[^4]: [Hugging Face: bitsandbytes 量化](https://huggingface.co/docs/transformers/main/quantization/bitsandbytes)
+[^5]: [ROCm RDNA 3.5 system optimization](https://rocm.docs.amd.com/en/latest/reference/system-optimization/rdna3-5.html)
+[^6]: [AMD Radeon AI PRO R9700](https://www.amd.com/en/products/graphics/workstations/radeon-ai-pro/ai-9000-series/amd-radeon-ai-pro-r9700.html)
+[^7]: [AMD Instinct accelerators](https://www.amd.com/en/products/accelerators/instinct.html)
+[^8]: [ROCm GPU specifications](https://rocm.docs.amd.com/en/docs-7.14.0/reference/gpu-specs.html)
+[^9]: [ROCm Compatibility matrix](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)
+[^10]: [vLLM: Optimization and Tuning](https://docs.vllm.ai/en/latest/configuration/optimization/)
+[^11]: [vLLM: GPU installation requirements](https://docs.vllm.ai/en/stable/getting_started/installation/gpu/)
+[^12]: [Ollama GPU support](https://docs.ollama.com/gpu)
+[^13]: [llama.cpp build backends](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
+[^14]: [ROCm RCCL](https://rocm.docs.amd.com/projects/rccl/en/latest/what-is-rccl.html)
+[^15]: [ROCm Docker](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html)
