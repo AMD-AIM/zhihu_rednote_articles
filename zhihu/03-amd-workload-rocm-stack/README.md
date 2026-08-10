@@ -9,9 +9,9 @@
 - **范围**：产品家族与软件层级的工程匹配，不做具体型号排行和跨硬件性能比较
 -->
 
-很多人都在用 AMD GPU 跑大模型，但本地跑个对话、线上扛并发、给模型做微调，哪怕用的是同一个模型，对显存和软件环境的要求也会差很多。
+很多人都在用 AMD GPU 跑大模型，但本地跑个对话、线上扛并发、给模型做微调，这类不同场景，哪怕用的是同一个模型，对显存和软件环境的要求也会差很多。
 
-所以不管做训练还是推理，都要先明确模型多大、使用什么精度、上下文多长、batch 开多少、是否需要跨卡，再去看硬件和软件。
+所以不管做训练还是推理，都要先明确模型多大、使用什么精度、上下文多长、batch 开多少、是否需要跨卡，这类问题，然后去看硬件和软件。
 
 ### 具体应用场景细分
 
@@ -56,7 +56,7 @@ QLoRA 进一步把冻结的基础权重量化压缩[^4]，不过计算时的中�
 
 训练的差距更大。LoRA 和 QLoRA 会减少需要保存梯度和优化器状态的参数范围，但实际占用会随模型、rank、序列长度、micro batch size、精度和训练框架变化。
 
-[AMD显卡到底能不能跑大模型？](https://www.xiaohongshu.com/explore/6a7599e6000000002202c0c2)用 8B 模型举例，给出的量级是 QLoRA 约 12GB、LoRA 约 28GB、全参数微调约 85GB，直观展示了三种方法的差距。显存组成和计算方法还可以继续参考[大模型训练和推理中的显存占用来源](https://zhuanlan.zhihu.com/p/2058222916676989074)、[预估模型训练和推理时的显存](https://zhuanlan.zhihu.com/p/2012270379821979384)和[深度学习模型推理过程所需的显存大小应该如何计算](https://www.zhihu.com/question/453677760/answer/76215193202)。
+[AMD显卡到底能不能跑大模型？](https://www.xiaohongshu.com/explore/6a7599e6000000002202c0c2?xsec_token=ABKJZCTAQBzCqo5vv3wr5GYi7kzhgTRDaQoA3CIrmEerk=&xsec_source=pc_search)用 8B 模型举例，给出的量级是 QLoRA 约 12GB、LoRA 约 28GB、全参数微调约 85GB，直观展示了三种方法的差距。显存组成和计算方法还可以继续参考[大模型训练和推理中的显存占用来源](https://zhuanlan.zhihu.com/p/2058222916676989074)、[预估模型训练和推理时的显存](https://zhuanlan.zhihu.com/p/2012270379821979384)和[深度学习模型推理过程所需的显存大小应该如何计算](https://www.zhihu.com/question/453677760/answer/76215193202)。
 
 ### 具体 AMD GPU/APU 的内存与应用场景
 
@@ -88,7 +88,7 @@ AMD 的几类产品不是简单的高低档排列，核心区别在于内存从�
 
 ### 实际验证怎么做
 
-PyTorch 场景可以先查设备，再跑一个最小 Tensor：
+PyTorch 场景可以先查设备，再跑一个最小 Tensor验证。注意 ROCm 版 PyTorch 复用的是 torch.cuda 这套接口，写法和 NVIDIA 环境一样：
 
 ```bash
 rocminfo | grep -E 'Marketing Name|Name:.*gfx'
@@ -106,7 +106,7 @@ PY
 
 ROCm 版 PyTorch 沿用 `torch.cuda` 接口。`available` 为 `True`、HIP 版本非空、结果位于 `cuda:0`，说明这条最小计算链路已经调用 GPU。完整安装和排查过程见 [AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)。
 
-本地量化推理可以参考 AMD Ryzen AI Max 的实践步骤[^15]：
+如果你不需要 PyTorch 环境、只想快速跑个模型对话，Ollama 这类工具上手更快。可以参考 AMD Ryzen AI Max 的实践步骤[^15]：
 
 ```bash
 ollama pull qwen3.5:35b
