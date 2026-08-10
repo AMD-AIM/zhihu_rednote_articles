@@ -19,7 +19,7 @@
 |---|---|
 | 本地推理 | 模型多大、上下文多长、同时跑几路请求、延迟能接受多少 |
 | 高并发服务 | 活跃序列数、KV Cache 占用、batch 大小、吞吐目标、稳定性要求 |
-| 单卡微调 | 用什么微调方法、什么精度、微批次多大、上下文多长、训练多少参数 |
+| 单卡微调 | 用什么微调方法、什么精度、micro batch size 多大、上下文多长、训练多少参数 |
 | 多卡训练与推理 | 模型总规模、全局 batch、怎么并行，跨卡还是跨节点 |
 
 需求定得越具体，后面硬件和软件就越好排除。
@@ -28,14 +28,23 @@
 
 内存容量是最先要过的关，但不能只看模型文件多大。
 
-推理时显存里至少要放三样东西：模型权重、KV Cache、运行时临时空间。
+推理时显存里至少要放三样东西：模型权重、KV Cache、运行时临时空间，比如算子的 workspace。
 特别是KV Cache：上下文变长、同时活跃的序列变多，KV Cache 就会膨胀，调度压力也跟着上来。
 
-训练比推理吃显存多得多。除了权重本身，还得保存梯度、优化器状态（比如 Adam 的一阶和二阶动量）、反向传播过程中保留的激活，以及算子的临时张量和工作区。
+训练比推理吃显存多得多。除了权重本身，还得保存梯度、优化器状态（比如 Adam 的一阶和二阶动量）、反向传播过程中保留的激活，以及算子的临时张量和 workspace。
 全参数训练的显存占用通常远高于模型权重本身[^1][^2]，具体取决于权重、梯度和优化器状态的精度，以及 batch 大小、上下文长度和激活保存策略。
 
 LoRA 倒是把基础权重冻结了，只训练低秩适配器[^3]，所以需要算梯度、存优化器状态的参数量大幅减少。但基础模型本身还在显存里，训练过程中的激活也还在，并不是"模型多大就只占多大"。
 QLoRA 进一步把冻结的基础权重量化压缩[^4]，不过计算时的中间精度和状态要看具体实现，不能一概而论。
+
+可以先用下面的数字判断容量量级：
+
+| 任务 | 常见显存估算 |
+|---|---|
+| 7B / 14B / 32B / 70B 模型的典型 Q4 GGUF 权重文件 | 约 5GB / 9GB / 20GB / 40–45GB |
+| 8B 模型用标准混合精度 Adam 做全参数训练 | 静态状态约 144GB，尚未计入激活[^1] |
+
+第一行只是权重文件量级，不含 KV Cache 和运行时开销；第二行按每参数约 18 bytes 的静态状态估算，实际还受优化器、精度、分片和激活重计算影响。显存组成和计算方法可以继续参考[大模型训练和推理中的显存占用来源](https://zhuanlan.zhihu.com/p/2058222916676989074)、[预估模型训练和推理时的显存](https://zhuanlan.zhihu.com/p/2012270379821979384)和[深度学习模型推理过程所需的显存大小应该如何计算](https://www.zhihu.com/question/453677760/answer/76215193202)，这些文章用于延伸计算思路，不是上表数字的实测来源。
 
 确认装得下之后，下一步是看瓶颈在哪：是带宽不够、数据喂不快；还是算力不够、矩阵乘算不动。
 这两个没有固定先后，得拿目标模型实际跑一下或做 profiling 才能判断。
@@ -54,22 +63,20 @@ AMD 这几类产品不是简单的高低档排列，核心区别在于显存从�
 
 ### 软件不是一个 ROCm 版本号
 
-硬件选完还只是一半。要真正跑起来，软件这边有好几层要对上：你的卡是什么完整型号、操作系统和内核驱动装的什么版本、ROCm 用户态是哪个版本、上面跑的框架是什么、这个场景还需要哪些额外的库。哪一层没对上都可能出问题。
+硬件选完还只是一半。要真正跑起来，软件这边有好几层要对上：你的卡是什么完整型号、操作系统和内核驱动装的什么版本、ROCm 用户态是哪个版本、上面跑的框架是什么、这个场景还需要哪些额外的库。
 
 而且不同任务走的软件路径不一样：
 
-- **训练与通用张量推理**一般走 PyTorch。要对的东西比较多：ROCm 版本、PyTorch 版本、Python 版本，还有一个容易漏的——PyTorch 构建产物要包含与你的卡匹配的 gfx（LLVM）target。[^9]
+- **训练与通用张量推理**一般走 PyTorch。可以先通过[一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)确认编译目标，再按[AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)核对 ROCm、PyTorch 和 Python 组合。PyTorch 构建产物要包含与你的卡匹配的 gfx（LLVM）target。[^9]
 - **LLM 离线批处理和在线服务**可以走 vLLM。vLLM 有自己验证过的 GPU + ROCm + PyTorch + Python 组合，最好直接用它推荐的镜像，自己拼版本容易踩坑。[^10][^11]
 - **本地量化模型运行**可以用 Ollama[^12] 或 llama.cpp[^13]，但有个容易搞混的地方：它们实际走的可能是 HIP/ROCm 后端，也可能是 Vulkan 后端。Vulkan 完全不经过 ROCm 用户态，这是两条不同的路径，哪条能用、效果怎么样，得分开确认。
 - **多 GPU 训练或推理**由框架选并行策略。采用 RCCL 后端时，all-reduce、all-gather、reduce-scatter 等集合通信可由 RCCL 执行[^14]；部分框架也有自定义通信路径。到了这一步，PCIe 还是 xGMI、要不要跨节点，都变成组合的一部分了。
 
-还有一个容易忽略的地方：用容器跑的时候，镜像里可以把 Python、ROCm 用户态库、框架和依赖都锁住，但宿主机那边的内核驱动、设备权限、GPU 型号和物理互联，容器是管不了的。验证的时候要把宿主和镜像一起看，不是容器能启动就说明没问题。[^15]
-
 ### 实际验证怎么做
 
-先用完整设备型号查出 gfx 编译目标，这是后面所有事的起点。然后去[ROCm 兼容矩阵](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)里核对这个型号支持什么 OS、什么驱动、什么 ROCm 版本。接着看你要用的框架——PyTorch、vLLM、Ollama、llama.cpp 还是别的——版本和后端能不能对上。如果用容器，多一步：先确认宿主机已经能把 GPU 暴露出来，再去管镜像里的用户态环境。最后跑一个最小测试，哪怕就一个 tensor 运算或者最小模型的一次推理，确认调用的确实是 GPU 而不是在走 CPU fallback。
+先用[一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)查出完整设备型号对应的 gfx 编译目标。然后按[AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)核对这个型号支持什么 OS、什么驱动、什么 ROCm 版本。接着看你要用的框架——PyTorch、vLLM、Ollama、llama.cpp 还是别的——版本和后端能不能对上。如果用容器，多一步：先确认宿主机已经能把 GPU 暴露出来，再去管镜像里的用户态环境。最后跑一个最小测试，哪怕就一个 tensor 运算或者最小模型的一次推理，确认调用的确实是 GPU 而不是在走 CPU fallback。
 
-笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1，通过 `HIP_VISIBLE_DEVICES` 只暴露一张卡，验证过单卡推理。这两条记录只能说明这两个特定环境跑通了，跟当前 ROCm 7.14 的官方支持状态是两回事，不能互相替代。
+笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1，通过 `HIP_VISIBLE_DEVICES` 只暴露一张卡，验证过单卡推理。Ryzen AI Max 的统一内存配置和本地模型运行可以参考 [AI Inference on AMD Ryzen AI Max Processor](https://rocm.blogs.amd.com/artificial-intelligence/ryzen-uma-llm/README.html)，两套本地实测的完整跑通过程后续再单独展开。
 
 说到底，能不能用取决于你的具体设备、软件版本和实际要跑的任务，不是看到 RDNA 或 CDNA 或某个 gfx 代号就能下结论的。
 
@@ -93,4 +100,3 @@ AMD 这几类产品不是简单的高低档排列，核心区别在于显存从�
 [^12]: [Ollama GPU support](https://docs.ollama.com/gpu)
 [^13]: [llama.cpp build backends](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
 [^14]: [ROCm RCCL](https://rocm.docs.amd.com/projects/rccl/en/latest/what-is-rccl.html)
-[^15]: [ROCm Docker](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/how-to/docker.html)
