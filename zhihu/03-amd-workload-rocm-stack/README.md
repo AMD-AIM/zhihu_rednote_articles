@@ -116,9 +116,7 @@ ollama ps
 
 `ollama ps` 会显示模型使用 CPU 还是 GPU，以及 GPU offload 比例。该文章还给出了统一内存配置和不同模型的本地运行结果。
 
-笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1 验证过单卡推理。
-
-在另一组相同 llama-bench 测试中，Qwen3.6-35B-A3B Q4_K_M 的生成速度在 Ryzen AI Max+ 395 上为 50.9 tok/s，在单张 Radeon AI PRO R9700 上为 77.4 tok/s。
+笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1 验证过单卡推理。在跑通的基础上，我们还用同一套 llama-bench 配置测试了 Qwen3.6-35B-A3B Q4_K_M：Ryzen AI Max+ 395 的生成速度为 50.9 tok/s，单张 Radeon AI PRO R9700 为 77.4 tok/s。
 
 后续会单独分享这两套环境的完整跑通步骤和性能数据，欢迎关注 AMD算力极客社。
 
