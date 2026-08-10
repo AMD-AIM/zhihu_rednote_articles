@@ -4,16 +4,18 @@
 内部交付元数据：
 - **平台**：知乎
 - **类型**：开发者选型框架（第 3 篇）
-- **状态**：draft-r4，人工通读后完成事实修订
+- **状态**：review-r2，13 条口头反馈与小红书引用要求已落实，待用户通读
 - **来源**：AMD 产品资料、ROCm 7.14 文档、PyTorch / vLLM / Ollama / llama.cpp 官方资料与本地实测
 - **范围**：产品家族与软件层级的工程匹配，不做具体型号排行和跨硬件性能比较
 -->
 
-都是跑大模型，但本地跑个对话、线上扛并发、做一轮微调，对软硬件的要求差别很大。光用"训练"和"推理"两个标签来分，粒度太粗——模型多大、什么精度、上下文多长、batch 开多少、要不要跨卡，这些才是先要确定的东西。
+很多人都在用 AMD GPU 跑大模型，但本地跑个对话、线上扛并发、给模型做微调，哪怕用的是同一个模型，对显存和软件环境的要求也会差很多。
 
-### 先把训练和推理拆细一点
+所以不管做训练还是推理，都要先明确模型多大、使用什么精度、上下文多长、batch 开多少、是否需要跨卡，再去看硬件和软件。
 
-"训练"和"推理"各自还能再分。下面四个场景经常互相重叠——本地推理也可能开长上下文和并发，单卡微调可以是 LoRA 也可以是全参数——但每个场景首先要确认的事情不一样：
+### 具体应用场景细分
+
+训练和推理各自还能再分。下面四个场景经常互相重叠，但每个场景首先要确认的事情不一样：
 
 | 场景 | 首先搞清楚什么 |
 |---|---|
@@ -22,9 +24,9 @@
 | 单卡微调 | 用什么微调方法、什么精度、多大的 micro batch size 、上下文多长、训练多少参数 |
 | 多卡训练与推理 | 模型总规模、全局 batch、怎么并行，跨卡还是跨节点 |
 
-需求定得越具体，后面硬件和软件就越好排除。
+从上表可以看到，本地推理先看模型和 KV Cache，高并发服务还要看同时处理多少请求，微调要把梯度、优化器状态和激活算进去；进入多卡以后，通信和互联也会成为新的限制。需求定得越具体，后面硬件和软件就越好判断。
 
-### 第一步：装不装得下
+### 不同任务需要多少显存
 
 内存容量是最先要过的关，但不能只看模型文件多大。
 
@@ -37,53 +39,84 @@
 LoRA 倒是把基础权重冻结了，只训练低秩适配器[^3]，所以需要算梯度、存优化器状态的参数量大幅减少。但基础模型本身还在显存里，训练过程中的激活也还在，并不是"模型多大就只占多大"。
 QLoRA 进一步把冻结的基础权重量化压缩[^4]，不过计算时的中间精度和状态要看具体实现，不能一概而论。
 
-可以参考以下数字初步判断容量量级：
+推理时可以先估算权重文件。例如 32B 模型按 4bit 计算，原始权重约为：
 
-| 任务 | 常见显存估算 |
-|---|---|
-| 7B / 14B / 32B / 70B 模型的典型 Q4 GGUF 权重文件 | 约 5GB / 9GB / 20GB / 40–45GB |
-| 8B 模型用标准混合精度 Adam 做全参数训练 | 静态状态约 144GB，尚未计入激活[^1] |
+```text
+32B × 4bit ÷ 8 ≈ 16GB
+```
 
-显存组成和计算方法可以继续参考[大模型训练和推理中的显存占用来源](https://zhuanlan.zhihu.com/p/2058222916676989074)、[预估模型训练和推理时的显存](https://zhuanlan.zhihu.com/p/2012270379821979384)和[深度学习模型推理过程所需的显存大小应该如何计算](https://www.zhihu.com/question/453677760/answer/76215193202)。
-（注：这些文章用于延伸计算思路，不是上表数字的实测来源。）
+再加上量化 scale、元数据和格式开销，常见 Q4 GGUF 文件约 20GB；真正运行时还要继续给 KV Cache 和 workspace 留空间。
 
-确认装得下之后，下一步是看瓶颈在哪：是带宽不够、数据喂不快；还是算力不够、矩阵乘算不动。
-这两个没有固定先后，得拿目标模型实际跑一下或做 profiling 才能判断。
-如果单卡放不下，或者吞吐目标要求多卡，那并行策略、卡间通信量、互联带宽就得一起考虑了。
+| 模型规模 | 典型 Q4 GGUF 权重文件 | 具体容量实例 |
+|---|---:|---|
+| 7B | 约 5GB | 16GB Radeon RX 9070 XT 可以留出较多运行空间[^8] |
+| 14B | 约 9GB | 16GB 独显能容纳权重，实际余量取决于上下文和后端 |
+| 32B | 约 20GB | 32GB Radeon AI PRO R9700 可继续容纳 KV Cache 和 workspace[^6] |
+| 70B | 约 40–45GB | 48GB Radeon PRO W7900 余量已经较紧；128GB 统一内存机器的容量空间更大[^5][^8] |
 
-### 几类 AMD 硬件形态差在哪
+训练的差距更大。LoRA 和 QLoRA 会减少需要保存梯度和优化器状态的参数范围，但实际占用会随模型、rank、序列长度、micro batch size、精度和训练框架变化。
 
-AMD 这几类产品不是简单的高低档排列，核心区别在于显存从哪来、有多少、软件支持到什么程度。
+[AMD显卡到底能不能跑大模型？](https://www.xiaohongshu.com/explore/6a7599e6000000002202c0c2)用 8B 模型举例，给出的量级是 QLoRA 约 12GB、LoRA 约 28GB、全参数微调约 85GB，直观展示了三种方法的差距。显存组成和计算方法还可以继续参考[大模型训练和推理中的显存占用来源](https://zhuanlan.zhihu.com/p/2058222916676989074)、[预估模型训练和推理时的显存](https://zhuanlan.zhihu.com/p/2012270379821979384)和[深度学习模型推理过程所需的显存大小应该如何计算](https://www.zhihu.com/question/453677760/answer/76215193202)。
 
-**Ryzen AI Max 这类 APU**没有独立显存，CPU 和集成 GPU 共用一块 LPDDR5x 物理内存。那 GPU 到底能用到多少？取决于两件事：一是运行时动态映射过来的部分（GPUVM / GTT），二是 BIOS 里预先划出来的固定区域（carve-out）。所以实际可用量要看系统总内存、BIOS 怎么设的、框架支不支持，三个一起确认。[^5]
-**Radeon 消费级独显**有自己的 GDDR6 显存。但同一代架构的不同型号，ROCm 和框架的支持状态可能不一样，得按完整型号去查。
-**Radeon AI PRO** 是工作站级独显，比如 R9700 带 32GB GDDR6[^6]，定位本地 AI 开发和推理。如果一台工作站里插多卡，还要看卡之间的拓扑结构，以及软件层面支持哪种并行方式。
-**AMD Instinct** 是数据中心用的[^7]，采用 HBM，并提供平台级的互联和扩展能力，训练、推理、HPC 都能覆盖。容量和带宽要按具体型号确认。
+### 具体 AMD GPU/APU 的内存与应用场景
 
-总之不能光看架构叫 RDNA 还是 CDNA 就下结论，得看具体型号内存够不够、软件支不支持你要跑的东西[^8]。
+AMD 的几类产品不是简单的高低档排列，核心区别在于内存从哪来、有多少，以及软件支持到什么程度。
 
-### 软件不是一个 ROCm 版本号
+| 产品实例 | 内存形态 | 可以用来理解什么场景 |
+|---|---|---|
+| Ryzen AI Max+ 395 / Radeon 8060S | 最高 128GB 统一 LPDDR5x | 大容量本地量化推理；GPU 实际可用量还受系统、BIOS 和框架影响[^5][^15] |
+| Radeon RX 9070 XT | 16GB GDDR6 | 7B、14B 量化模型，以及容量范围内的 PyTorch 推理[^8] |
+| Radeon RX 7900 XTX | 24GB GDDR6 | 更大模型的单卡推理，或根据具体配置开展参数高效微调[^8] |
+| Radeon AI PRO R9700 | 32GB GDDR6 | 本地 AI 开发、推理和工作站多卡场景[^6] |
+| Radeon PRO W7900 | 48GB GDDR6 | 需要更大单卡本地显存的工作站场景[^8] |
+| Instinct MI300X / MI325X / MI355X | 192GB / 256GB / 288GB HBM | 数据中心训练、推理和多 GPU 扩展[^16][^17][^18] |
 
-硬件选完还只是一半。要真正跑起来，软件这边有好几层要对上：你的卡是什么完整型号、操作系统和内核驱动装的什么版本、ROCm 用户态是哪个版本、上面跑的框架是什么、这个场景还需要哪些额外的库。
+从这些实例可以看到，同样是 RDNA 架构，16GB、24GB、32GB 和 48GB 对应的容量范围已经不同；进入 Instinct 后，内存形态和平台互联也一起改变。判断时要同时看具体型号、显存和目标软件，不能只看 RDNA 或 CDNA 名称。
 
-而且不同任务走的软件路径不一样：
+### 推理、微调和训练分别用什么软件
 
-- **训练与通用张量推理**一般走 PyTorch。要对的东西比较多：ROCm 版本、PyTorch 版本、Python 版本，还有一个容易漏的（参考[AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)）——PyTorch 构建产物要包含与你的卡匹配的 gfx（LLVM）target（参考[一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)）。[^9]
-- **LLM 离线批处理和在线服务**可以走 vLLM。vLLM 有自己验证过的 GPU + ROCm + PyTorch + Python 组合，最好直接用它推荐的镜像，自己拼版本容易踩坑。[^10][^11]
-- **本地量化模型运行**可以用 Ollama[^12] 或 llama.cpp[^13]，但有个容易搞混的地方：它们实际走的可能是 HIP/ROCm 后端，也可能是 Vulkan 后端。Vulkan 完全不经过 ROCm 用户态，这是两条不同的路径，哪条能用、效果怎么样，得分开确认。
-- **多 GPU 训练或推理**由框架选并行策略。采用 RCCL 后端时，all-reduce、all-gather、reduce-scatter 等集合通信可由 RCCL 执行[^14]；部分框架也有自定义通信路径。到了这一步，PCIe 还是 xGMI、要不要跨节点，都变成组合的一部分了。
+硬件容量明确以后，软件可以直接按任务来分：
+
+| 使用场景 | 软件组合 | 直接从哪里开始 |
+|---|---|---|
+| 本地量化推理 | Ollama、LM Studio 或 llama.cpp | 加载 GGUF 模型后查看实际 GPU 后端；Ollama 可用 `ollama ps` 查看 offload 比例[^12][^13][^19] |
+| PyTorch 推理与微调 | Linux + ROCm + PyTorch，微调时再接 PEFT、TRL 等训练库 | 先查[gfx 编译目标](https://zhuanlan.zhihu.com/p/2067663713826612548)，按[安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)安装，再跑一个 GPU Tensor[^9] |
+| LLM 离线批处理和在线服务 | Linux + ROCm + vLLM | 从 AMD ROCm 7.14 的固定验证镜像开始，再执行 `vllm serve <模型>` 启动 OpenAI 兼容 API[^10][^11][^20] |
+| 多 GPU 训练或推理 | PyTorch DDP / FSDP 等分布式策略 | 先用 `torchrun --nproc-per-node=<GPU 数量> train.py` 启动；PyTorch 参数写 `nccl`，ROCm 环境底层使用 RCCL[^14] |
+
+从这张表可以看到，本地推理、PyTorch 微调、vLLM 服务和多 GPU 任务有不同的起点，不需要先把所有软件都装一遍。
 
 ### 实际验证怎么做
 
-先用完整设备型号查出 gfx 编译目标，这是后面所有事的起点。然后去[ROCm 兼容矩阵](https://rocm.docs.amd.com/en/latest/compatibility/compatibility-matrix.html)里核对这个型号支持什么 OS、什么驱动、什么 ROCm 版本。接着看你要用的框架——PyTorch、vLLM、Ollama、llama.cpp 还是别的——版本和后端能不能对上参考[AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)，此外gfx版本参考gfx（LLVM）target（参考[一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)）。
-如果用容器，多一步：先确认宿主机已经能把 GPU 暴露出来，再去管镜像里的用户态环境。最后跑一个最小测试，哪怕就一个 tensor 运算或者最小模型的一次推理，确认调用的确实是 GPU 而不是在走 CPU fallback。
+PyTorch 场景可以先查设备，再跑一个最小 Tensor：
 
-笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1，通过 `HIP_VISIBLE_DEVICES` 只暴露一张卡，验证过单卡推理。未来会单独写一篇文章，分享跑通历程。
-此外，Ryzen AI Max 的统一内存配置和本地模型运行可以参考 [AI Inference on AMD Ryzen AI Max Processor](https://rocm.blogs.amd.com/artificial-intelligence/ryzen-uma-llm/README.html)
+```bash
+rocminfo | grep -E 'Marketing Name|Name:.*gfx'
+python - <<'PY'
+import torch
 
-说到底，能不能用取决于你的具体设备、软件版本和实际要跑的任务，不是看到 RDNA 或 CDNA 或某个 gfx 代号就能下结论的。
+print("available:", torch.cuda.is_available())
+print("HIP:", torch.version.hip)
+print("device:", torch.cuda.get_device_name(0))
 
-具体操作可以继续参考：完整型号与 gfx 的关系见 [一文讲清 AMD GPU 显卡型号及其代号 gfx](https://zhuanlan.zhihu.com/p/2067663713826612548)；CU、Wavefront、LDS 和独显 / APU 内存路径见 [AMD GPU/APU AI 架构入门](https://zhuanlan.zhihu.com/p/2068399264997315488)；ROCm 与 PyTorch 的安装和最小验证步骤见 [AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)。
+x = torch.randn((1024, 1024), device="cuda")
+print("result:", (x @ x).device)
+PY
+```
+
+ROCm 版 PyTorch 沿用 `torch.cuda` 接口。`available` 为 `True`、HIP 版本非空、结果位于 `cuda:0`，说明这条最小计算链路已经调用 GPU。完整安装和排查过程见 [AMD ROCm 与 PyTorch 安装指南](https://zhuanlan.zhihu.com/p/2068740074364260377)。
+
+本地量化推理可以参考 AMD Ryzen AI Max 的实践步骤[^15]：
+
+```bash
+ollama pull qwen3.5:35b
+ollama run qwen3.5:35b
+ollama ps
+```
+
+`ollama ps` 会显示模型使用 CPU 还是 GPU，以及 GPU offload 比例。该文章还给出了统一内存配置和不同模型的本地运行结果。
+
+笔者在 Ryzen AI Max+ 395 上用 ROCm 7.2.3 和 llama.cpp HIP 后端跑过 Q4 GGUF 量化模型；也在 Radeon AI PRO R9700 上用 ROCm 7.2.0、PyTorch 2.9.1、Transformers 5.14.1 验证过单卡推理。两套本地实测的完整跑通过程后续再单独展开。
 
 #AMD #ROCm #GPU #APU #PyTorch #大模型 #人工智能
 
@@ -103,3 +136,9 @@ AMD 这几类产品不是简单的高低档排列，核心区别在于显存从�
 [^12]: [Ollama GPU support](https://docs.ollama.com/gpu)
 [^13]: [llama.cpp build backends](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md)
 [^14]: [ROCm RCCL](https://rocm.docs.amd.com/projects/rccl/en/latest/what-is-rccl.html)
+[^15]: [AI Inference on AMD Ryzen AI Max Processor](https://rocm.blogs.amd.com/artificial-intelligence/ryzen-uma-llm/README.html)
+[^16]: [AMD Instinct MI300X](https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html)
+[^17]: [AMD Instinct MI325X](https://www.amd.com/en/products/accelerators/instinct/mi300/mi325x.html)
+[^18]: [AMD Instinct MI355X](https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html)
+[^19]: [LM Studio 0.3.9：ROCm 与 Vulkan 引擎](https://lmstudio.ai/blog/lmstudio-v0.3.9)
+[^20]: [ROCm：vLLM inference](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/inference/vllm.html)
