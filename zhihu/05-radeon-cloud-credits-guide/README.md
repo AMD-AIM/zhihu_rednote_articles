@@ -8,7 +8,7 @@
 - 不展开：全球站、SSH、Tunnel、Token Factory
 -->
 
-我在知乎上看到很多朋友都想部署开源模型推理服务来玩一玩或者开发一些有趣的东西，包括各种 Agent 、diffusion、LLM、VLM、具身智能之类的，可惜没有可用 GPU算力资源，我猜多数人一开始可能想到的是去网上云平台租用nvidia GPU，但今天我们作为AMD按摩的，给大家力荐我们AMD Radeon Cloud，这是 AMD 提供的云算力平台，我们目前提供的GPU是Radeon Pro W7900专业显卡，48G显存，不要任何money，每个人都可以在云端 AMD Radeon GPU 上运行自己的代码和项目，本文将手把手教你如何baipiao AMD Radeon GPU
+我在知乎上看到很多朋友都想部署开源模型推理服务来玩一玩或者开发一些有趣的东西，包括各种 Agent 、diffusion、LLM、VLM、具身智能之类的，可惜没有可用 GPU算力资源，我猜多数人一开始可能想到的是去网上云平台租用nvidia GPU，但今天我们作为AMD按摩的，给大家力荐我们AMD Radeon Cloud，这是 AMD 提供的云算力平台，我们目前提供的GPU是Radeon Pro W7900专业显卡，48G显存，不要任何money，每个人都可以在云端 AMD Radeon GPU 上运行自己的代码和项目，本文将手把手教你如何baipiao AMD Radeon GPU，后续，我们还将带来更多在AMD Radeon GPU上部署流行大模型（比如minimax H3，miniCPM）的心得以及AMD Radeon Cloud的更多玩法，欢迎大家持续关注哦
 
 AMD Radeon Cloud 中国站的算力入口与 [AMD AI 开发者计划](https://developer.amd.com.cn/)（下文简称 ADP）相连。ADP 负责账号、活动权益和经验值，Radeon Cloud 则使用兑换后的 Credits 启动 GPU 实例。也就是说，第一次使用 Radeon Cloud，需要先从 ADP 取得云算力。
 
