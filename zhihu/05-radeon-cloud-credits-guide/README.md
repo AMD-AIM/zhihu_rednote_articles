@@ -54,13 +54,7 @@ Radeon Cloud 中国站的算力入口与 [AMD AI 开发者计划](https://develo
 
 ![在 Profile 中兑换 Coupon Code，Credits 从 0 增加到 1](images/07-rc-redemption-flow.png)
 
-### 启动实例前，先看 Credits 怎样扣除
-
-Profile 写明：每块 GPU 每小时消耗 1 Credit，每个账号只能保留一个活动实例。启动实例时，系统会先扣除 Credit，不是等实例运行满一小时后再扣款。
-
-我启动的单 GPU 实例只运行了约 4 分钟，页面已经显示 `Credits Consumed` 为 1；提前销毁后，剩余时间不会退回。实际操作时，可以先把下文的两段命令和模型名称复制到本地，再回来创建实例。
-
-### 创建一个最简单的 Notebook
+### 创建一个最简单的 Notebook Template
 
 在同一 Profile 页面的 `My Templates` 区域可以看到 `Add Template` 按钮。点击后可以选择容器镜像和环境类型，例如 Notebook、App 或模型推理服务。
 
@@ -72,11 +66,25 @@ Profile 写明：每块 GPU 每小时消耗 1 Credit，每个账号只能保留�
 - `Container Image`：这次使用当前提供的 `AMD OneClick Base`；
 - `Deploy Type`：选择 `Notebook (Jupyter / OpenCode)`。
 
-其余 GitHub Repo、Notebook Path 和 SSH 等字段可以留空。点击 `Add Template` 后，新模板会出现在 `My Templates`，再点击该行的 `Launch`。
+其余 GitHub Repo、Notebook Path 和 SSH 等字段可以留空。
+
+点击 `Add Template` 后，新模板会出现在 `My Templates`，此时可以看到 `Launch` 按钮。
 
 ![创建并启动 Notebook Template](images/10-template-create-launch.png)
 
-页面会先进行图像人机验证，再向 ADP 账号邮箱发送一次性 6 位验证码。验证完成后，平台开始准备工作空间；进度到达 Ready 后，点击 `Open Notebook` 进入 JupyterLab。
+### 启动实例前，先看 Credits 怎样扣除
+
+停一下，先不要点击 `Launch`。这里有一条计费规则需要先说明：
+
+Profile 写明：每块 GPU 每小时消耗 1 Credit，每个账号只能保留一个活动实例。启动实例时，系统会先扣除 Credit，不是等实例运行满一小时后再扣款。
+
+我启动的单 GPU 实例只运行了约 4 分钟，页面已经显示 `Credits Consumed` 为 1；提前销毁后，剩余时间不会退回。
+
+实际操作时，先在本地准备好要进入环境运行的命令，可以避免前期的 Credits 空耗。
+
+### 回到 Template，启动实例
+
+点击 `Launch` 后，页面会先进行图像人机验证，再向 ADP 账号邮箱发送一次性 6 位验证码。验证完成后，平台开始准备工作空间；进度到达 Ready 后，点击 `Open Notebook` 进入 JupyterLab。
 
 ### 先确认 GPU，再运行模型
 
@@ -133,7 +141,7 @@ PY
 
 ![PyTorch GPU 检查与 Qwen2.5-0.5B-Instruct 推理结果](images/14-gpu-and-model.png)
 
-### 跑完后立即销毁实例
+### 完成任务后，记得销毁实例
 
 关闭 JupyterLab 标签页或退出浏览器不会停止云端实例。使用结束后，先保存需要保留的代码和输出，再回到 Profile 点击 `Destroy Instance`。页面显示 `No active instance` 后，这次使用才真正结束。
 
