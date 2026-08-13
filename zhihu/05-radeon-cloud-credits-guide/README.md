@@ -8,9 +8,9 @@
 - 不展开：全球站、SSH、Tunnel、Token Factory
 -->
 
-想部署开源模型推理服务，或运行 Agent 项目，却没有可用 GPU，怎么办？Radeon Cloud 是 AMD 提供的云算力平台，可以直接从浏览器创建 Notebook、App 或模型服务，在云端 AMD GPU 上运行自己的代码。
+我在知乎上看到很多朋友都想部署开源模型推理服务来玩一玩或者开发一些有趣的东西，包括各种 Agent 、diffusion、LLM、VLM、具身智能之类的，可惜没有可用 GPU算力资源，我猜多数人一开始可能想到的是去网上云平台租用nvidia GPU，但今天我们作为AMD按摩的，给大家力荐我们AMD Radeon Cloud，这是 AMD 提供的云算力平台，我们目前提供的GPU是Radeon Pro W7900专业显卡，48G显存，不要任何money，每个人都可以在云端 AMD Radeon GPU 上运行自己的代码和项目，本文将手把手教你如何baipiao AMD Radeon GPU
 
-Radeon Cloud 中国站的算力入口与 [AMD AI 开发者计划](https://developer.amd.com.cn/)（下文简称 ADP）相连。ADP 负责账号、活动权益和经验值，Radeon Cloud 则使用兑换后的 Credits 启动 GPU 实例。也就是说，第一次使用 Radeon Cloud，需要先从 ADP 取得云算力。
+AMD Radeon Cloud 中国站的算力入口与 [AMD AI 开发者计划](https://developer.amd.com.cn/)（下文简称 ADP）相连。ADP 负责账号、活动权益和经验值，Radeon Cloud 则使用兑换后的 Credits 启动 GPU 实例。也就是说，第一次使用 Radeon Cloud，需要先从 ADP 取得云算力。
 
 我实际从 ADP 兑换了 1 小时云算力，在 Radeon Cloud 创建 Notebook，确认 PyTorch 已识别 AMD GPU，并用 Qwen2.5-0.5B-Instruct 完成了一次推理。下面把领取、兑换、运行和销毁实例的完整步骤分享出来。
 
@@ -106,7 +106,7 @@ if available:
 PY
 ```
 
-本次环境返回 PyTorch 2.9.1、ROCm/HIP 7.2，`GPU available` 为 `True`，矩阵结果位于 `cuda:0`。这说明当前容器中的 PyTorch 已经可以调用云端 AMD GPU。
+本次环境返回 PyTorch 2.9.1、ROCm/HIP 7.2，`GPU available` 为 `True`，矩阵结果位于 `cuda:0`。这说明当前容器中的 PyTorch 已经可以发现并调用云端 AMD GPU backend。
 
 GPU 确认可用后，再安装 Transformers，并运行 Qwen2.5-0.5B-Instruct：
 
@@ -146,5 +146,7 @@ PY
 关闭 JupyterLab 标签页或退出浏览器不会停止云端实例。使用结束后，先保存需要保留的代码和输出，再回到 Profile 点击 `Destroy Instance`。页面显示 `No active instance` 后，这次使用才真正结束。
 
 ![1 Credit 的预扣与实例销毁](images/16-billing-and-destroy.png)
+
+好了，AMD Radeon cloud就是这样子使用滴，你学会了吗？欢迎评论区讨论交流你遇到的问题
 
 #AMD #RadeonCloud #ROCm #PyTorch #云算力 #GPU #大模型 #人工智能
