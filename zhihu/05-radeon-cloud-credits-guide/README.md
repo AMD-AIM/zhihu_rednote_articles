@@ -3,26 +3,28 @@
 <!--
 内部状态：
 - 平台：知乎
-- 状态：draft-r3，基于明确目标读者重写，持续人工迭代
+- 状态：review-ready，完成目标读者重写与人工修改，待 Daniel / Annie review
 - 实测链路：ADP 经验值 → 云算力券 → Radeon Cloud Credits → My Templates → 单 GPU Notebook → Qwen2.5-0.5B-Instruct → 销毁实例
 - 不展开：全球站、SSH、Tunnel、Token Factory
 -->
 
-已经会用开源模型做基础推理，想进一步部署模型推理服务或运行 Agent 项目，却没有可用 GPU，怎么办？Radeon Cloud 提供了云端 AMD GPU 环境，可以直接从浏览器创建 Notebook，安装依赖并运行自己的代码。
+想部署开源模型推理服务，或运行 Agent 项目，却没有可用 GPU，怎么办？Radeon Cloud 是 AMD 提供的云算力平台，可以直接从浏览器创建 Notebook、App 或模型服务，在云端 AMD GPU 上运行自己的代码。
 
-中国站的算力入口与 [AMD AI 开发者计划](https://developer.amd.com.cn/)（下文简称 ADP）相连。ADP 负责账号、活动权益和经验值，Radeon Cloud 则使用兑换后的 Credits 启动 GPU 实例。也就是说，第一次使用 Radeon Cloud，需要先从 ADP 取得云算力。
+Radeon Cloud 中国站的算力入口与 [AMD AI 开发者计划](https://developer.amd.com.cn/)（下文简称 ADP）相连。ADP 负责账号、活动权益和经验值，Radeon Cloud 则使用兑换后的 Credits 启动 GPU 实例。也就是说，第一次使用 Radeon Cloud，需要先从 ADP 取得云算力。
 
 我实际从 ADP 兑换了 1 小时云算力，在 Radeon Cloud 创建 Notebook，确认 PyTorch 已识别 AMD GPU，并用 Qwen2.5-0.5B-Instruct 完成了一次推理。下面把领取、兑换、运行和销毁实例的完整步骤分享出来。
 
 ### 先注册 ADP，看看账号里的经验值
 
-打开 ADP 首页完成注册并登录。参与课程和活动可以积累经验值，点击首页的“升级规则”可以查看当前获取方式。
+打开 ADP 首页完成注册并登录。
 
-登录后的首页会显示当前经验值，旁边注明“1 积分对应 1 经验值”。因此，后续兑换页面所说的积分，对应的就是这里看到的经验值。
+登录后的首页会显示当前经验值，旁边注明 1 积分对应 1 经验值。如果你在后续页面里看到积分字样，那么实际上就是 ADP 的经验值了。
 
 ![ADP 当前经验值](images/01-adp-experience.png)
 
-要把经验值变成真正可用的 GPU 时间，需要完成两次兑换：先在 ADP 用积分领取云算力券，再到 Radeon Cloud 把云算力券充成 Credits。
+此外，参与课程和活动可以积累经验值，点击首页的“升级规则”可以查看当前获取方式。
+
+接下来，要把经验值变成真正可用的 GPU 时间，我们还需要完成两次兑换：先在 ADP 用积分领取云算力券，再到 Radeon Cloud 把云算力券充成 Credits。
 
 ### 用 ADP 积分领取云算力券
 
@@ -30,11 +32,11 @@
 
 ![积分兑换云额度入口](images/02-adp-benefit.png)
 
-点击“领取”会进入[积分兑换页面](https://developer.amd.com.cn/points/redeem)。2026 年 8 月 13 日的页面显示：1 积分可以兑换 1 小时算力，每个账号每天最多兑换 20 积分。ADP 积分本身不过期，但兑换后的云算力券只有 30 天有效期。
+点击“领取”会进入[积分兑换页面](https://developer.amd.com.cn/points/redeem)。我们可以看到：1 积分可以兑换 1 小时算力，每个账号每天最多兑换 20 积分。ADP 积分本身不过期，但兑换后的云算力券只有 30 天有效期。
 
 ![积分、云算力券与到账算力的有效期规则](images/03-adp-rules.png)
 
-第一次体验不需要一次换很多。我填写 1 小时，页面对应扣除 1 积分。确认兑换后，历史记录先提示“算力券将在 5 分钟内到账”；大约 5 分钟后，右侧出现“查看云算力券”。
+下面以兑换 1 小时为例。填写 1 小时后，页面会扣除 1 积分。确认兑换后，历史记录先提示“算力券将在 5 分钟内到账”；大约 5 分钟后，右侧出现“查看云算力券”。
 
 ![兑换 1 小时云算力并等待卡券到账](images/04-adp-exchange-flow.png)
 
@@ -42,31 +44,35 @@
 
 ![复制云算力券兑换链接](images/06-voucher-link-redacted.png)
 
-这段链接就是云算力券，在 Radeon Cloud 中会作为 `Coupon Code` 使用。它是不记名虚拟卡券，遗失后不会补发，不要把完整链接发到公开聊天或截图中。
+截图中隐藏了完整链接。实际页面会显示完整的云算力券，下一步在 Radeon Cloud 中把它作为 `Coupon Code` 使用。
 
 ### 把云算力券兑换成 Radeon Cloud Credits
 
-打开 [Radeon Cloud 中国站](https://developer.amd.com.cn/radeon/)，点击右上角 `Login`，选择 `Login with AMDAI`。完成账号绑定后，点击头像进入 `Profile`。
+直接点击链接打开 [Radeon Cloud 中国站](https://developer.amd.com.cn/radeon/)，点击右上角 `Login`，选择 `Login with AMDAI`。完成账号绑定后，点击头像进入 `Profile`。
 
-兑换前，我的 `Credits Available` 为 0。点击 `Redeem Credits`，把刚才复制的云算力券粘贴到 `Coupon Code` 输入框，再点击 `Redeem`。页面提示兑换成功后，余额增加为 1 Credit。充值后的 Credits 有效期为 90 天。
+可以看到：兑换前，我的 `Credits Available` 为 0。点击 `Redeem Credits`，把刚才复制的云算力券粘贴到 `Coupon Code` 输入框，再点击 `Redeem`。页面提示兑换成功后，余额增加为 1 Credit。充值后的 Credits 有效期为 90 天。
 
 ![在 Profile 中兑换 Coupon Code，Credits 从 0 增加到 1](images/07-rc-redemption-flow.png)
 
-### 先别急着 Launch：1 Credit 会预先扣除
+### 启动实例前，先看 Credits 怎样扣除
 
-Profile 写明：每块 GPU 每小时消耗 1 Credit，每个账号只能保留一个活动实例。点击 `Launch` 时，系统会先扣除 Credit，不是等实例运行满一小时后再扣款。
+Profile 写明：每块 GPU 每小时消耗 1 Credit，每个账号只能保留一个活动实例。启动实例时，系统会先扣除 Credit，不是等实例运行满一小时后再扣款。
 
-我启动的单 GPU 实例只运行了约 4 分钟，页面已经显示 `Credits Consumed` 为 1；提前销毁后，剩余时间不会退回。因此，启动前先准备好要执行的代码和模型，避免把 Credits 消耗在环境摸索上。
+我启动的单 GPU 实例只运行了约 4 分钟，页面已经显示 `Credits Consumed` 为 1；提前销毁后，剩余时间不会退回。实际操作时，可以先把下文的两段命令和模型名称复制到本地，再回来创建实例。
 
 ### 创建一个最简单的 Notebook
 
-Template 会记录实例使用的容器镜像，以及它要打开成 Notebook、App 还是模型服务。这次只创建一个可以使用 Terminal 和 Python 的空白 Notebook：在 Profile 的 `My Templates` 区域点击 `Add Template`，然后填写三个位置：
+在同一 Profile 页面的 `My Templates` 区域可以看到 `Add Template` 按钮。点击后可以选择容器镜像和环境类型，例如 Notebook、App 或模型推理服务。
+
+这次演示创建一个可以使用 Terminal 和 Python 的空白 Notebook。
+
+点击 `Add Template` 后，依次填写三个位置：
 
 - `Title`：填写一个方便自己识别的名称；
 - `Container Image`：这次使用当前提供的 `AMD OneClick Base`；
 - `Deploy Type`：选择 `Notebook (Jupyter / OpenCode)`。
 
-这次只需要一个空白 Notebook，其余 GitHub Repo、Notebook Path 和 SSH 等字段可以留空。点击 `Add Template` 后，新模板会出现在 `My Templates`。确认代码和模型名称已经准备好，再点击该行的 `Launch`。
+其余 GitHub Repo、Notebook Path 和 SSH 等字段可以留空。点击 `Add Template` 后，新模板会出现在 `My Templates`，再点击该行的 `Launch`。
 
 ![创建并启动 Notebook Template](images/10-template-create-launch.png)
 
