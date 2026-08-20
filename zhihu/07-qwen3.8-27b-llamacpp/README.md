@@ -2,7 +2,7 @@
 
 A 卡玩家等本地大模型等太久了吧。N 卡那边 CUDA 生态随便跑，咱们这边折腾半天还得看兼容性脸色。但这次情况不一样——Qwen3.8 27B 放出来了，AMD 官方第一天就给了适配，llama.cpp 直接能用。
 
-而且这模型本身就离谱：SWE-bench Pro 编码能力测试打了 61.7 分，Anthropic 的 Claude Opus 4.6 Max 才 53.4。一个开源的、能在你桌上跑的 270 亿参数模型，编码跑分把人家几千亿参数的闭源旗舰给超了。这不是小数点级别的差距，是 8 分的碾压。
+而且这模型本身就离谱：SWE-bench Pro 编码能力测试打了 61.7 分，Anthropic 的 Claude Opus 4.6 Max 才 53.4。一个开源的、能在你桌上跑的 270 亿参数模型，编码跑分把闭源顶尖模型给超了。
 
 ---
 
@@ -12,7 +12,8 @@ Qwen3.8 27B 是阿里 Qwen 团队 8 月 14 日发布的开放权重模型，Apac
 
 AMD 这边，模型发布当天就宣布支持。官方已经验证 Ryzen AI Max+ 395 和 Radeon AI PRO R9700 两款硬件都能通过 llama.cpp 直接跑 Qwen3.8 27B。对我们 A 卡用户来说，问题就三个：我的卡能不能跑？该下哪个版本的模型？怎么把它变成一个本地 API 服务让别的工具调用？
 
-我在 AMD Radeon Cloud 的一张 Radeon PRO W7900（48GB 显存）上把整套流程跑通了。模型所有计算层全部放进了显卡，没有任何部分需要 CPU 兜底。跑起来之后的速度：普通对话大约每秒生成 32 个 token——打字速度的十倍，体感是即时响应。开启加速功能后，普通对话到了每秒 42 个 token，写代码时还能再翻一倍。
+我在 AMD Radeon Cloud 的一张 Radeon PRO W7900（48GB 显存）上把整套流程跑通了。模型所有计算层全部放进了显卡，没有任何部
+分需要 CPU 兜底。跑起来之后的速度：普通对话大约每秒生成 32 个 token，体感是即时响应。开启加速功能后，普通对话到了每秒 42 个 token，写代码时还能接近再翻一倍。
 
 ![AMD Qwen3.8 27B Day 0 支持](images/amd-qwen38-day0-scorecard.jpg)
 
@@ -30,7 +31,7 @@ AMD 这边，模型发布当天就宣布支持。官方已经验证 Ryzen AI Max
 
 #### 模型文件怎么选
 
-Qwen3.8 27B 原始权重是 FP16，直接加载需要约 54GB 显存——超出 W7900 的 48GB。所以我们需要用量化版本。
+Qwen3.8 27B 原始权重是 FP16，直接加载需要约 55.6GB 显存，超出 W7900 的 48GB。所以我们需要用量化版本。
 
 我选的是社区制作的 GGUF 格式文件，量化等级 Q4_K_M。拆开说：
 
@@ -54,7 +55,7 @@ MTP 全称 Multi-Token Prediction。正常情况下，模型每一步只输出�
 - 不加载 MTP → 实际占用约 **17.8 GiB**
 - 加载 MTP（设为 2）→ 约 **19.2 GiB**，多出 1.3 GiB 左右
 
-也就是说，哪怕开启 MTP，总共也只用了 48GB 里的不到一半。如果你的显卡有 24GB 以上显存，大概率也装得下这个模型。
+也就是说，哪怕开启 MTP，总共也只用了 48GB 里的不到一半。如果你的显卡有 24GB 以上显存，也有概率也装得下这个模型。
 
 启动时 llama.cpp 的日志会打印一行 `offloaded 65/65 layers to GPU`——意思是模型一共 65 层计算，全部交给显卡执行了。如果你的显存不够，这个数字会变小，比如 `offloaded 40/65 layers`，剩下的层会退回 CPU 算，速度会明显下降。所以看到 65/65，就说明显存充裕、全速运行。
 
@@ -64,7 +65,7 @@ MTP 全称 Multi-Token Prediction。正常情况下，模型每一步只输出�
 
 纯文本输入，上下文窗口 8192 token（大约 6000 字的对话长度），单用户。Qwen3.8 27B 原生支持 26 万 token 上下文和视觉输入，这些是后续可以单独验证的方向——这篇文章先解决"跑起来、确认能用、测出速度"。
 
-我在 Radeon Cloud 上操作，但下面的步骤对任何 RDNA3 架构、24GB+ 显存的 A 卡都适用。遇到 Radeon Cloud 特有的环境限制时，我会单独标出来——如果你在自己的机器上跑，跳过那些部分就行。
+我在 Radeon Cloud 上操作，但下面的步骤，对任何 RDNA3 架构、24GB+ 显存的 A 卡都可以作为参考。遇到 Radeon Cloud 特有的环境限制时，我会单独标出来——如果你在自己的机器上跑，跳过那些部分就行。
 
 ![W7900 实测环境](images/w7900-environment.png)
 
@@ -81,6 +82,9 @@ MTP 全称 Multi-Token Prediction。正常情况下，模型每一步只输出�
 如果你在自己的机器上操作，直接克隆即可：
 
 ```bash
+mkdir -p ~/qwen38
+cd ~/qwen38
+
 git clone https://github.com/ggml-org/llama.cpp.git
 cd llama.cpp
 git checkout 2e92ecd0247d25f09797f8fdb044a166522fc05d
@@ -100,7 +104,8 @@ git checkout 2e92ecd0247d25f09797f8fdb044a166522fc05d
 >   | sha256sum -c -
 >
 > tar -xzf llama.cpp-2e92ecd.tar.gz
-> cd llama.cpp-2e92ecd0247d25f09797f8fdb044a166522fc05d
+> mv llama.cpp-2e92ecd0247d25f09797f8fdb044a166522fc05d llama.cpp
+> cd llama.cpp
 > ```
 
 #### 安装 Vulkan 构建依赖
@@ -125,6 +130,8 @@ sudo apt install -y \
 cmake -S . -B build-vulkan \
   -DGGML_VULKAN=ON \
   -DCMAKE_BUILD_TYPE=Release \
+  -DLLAMA_BUILD_NUMBER=10511 \
+  -DLLAMA_BUILD_COMMIT=2e92ecd0247d25f09797f8fdb044a166522fc05d \
   -DLLAMA_CURL=OFF \
   -DLLAMA_BUILD_UI=OFF \
   -DLLAMA_USE_PREBUILT_UI=OFF \
@@ -137,30 +144,28 @@ cmake --build build-vulkan --config Release -j$(nproc) \
 
 几个开关的含义：
 
-- `DGGML_VULKAN=ON`：启用 Vulkan 后端，这是整个编译的核心目的。
-- `DLLAMA_BUILD_UI=OFF`：关掉内嵌 Web 界面。llama-server 默认会在编译时从网上拉一份前端资源，如果你的网络环境拉不到就会报错。关掉之后命令行和 API 完全不受影响，需要界面时用任何 OpenAI 兼容的客户端连就行。
+- `-DGGML_VULKAN=ON`：启用 Vulkan 后端，这是整个编译的核心目的。
+- `-DLLAMA_BUILD_UI=OFF`：关掉内嵌 Web 界面。llama-server 默认会在编译时从网上拉一份前端资源，如果你的网络环境拉不到就会报错。关掉之后命令行和 API 完全不受影响，需要界面时用任何 OpenAI 兼容的客户端连就行。
 - `ccache`：加速重复编译，首次编译也不影响结果。
-
-> **关于 build identity：** 如果你是通过归档而不是 git clone 获取的源码，编译出来的二进制版本号会显示 `0 / unknown`。功能完全不受影响。如果你在意日志里的版本标识，可以在 cmake 命令中加上：
-> ```
-> -DLLAMA_BUILD_NUMBER=10511 \
-> -DLLAMA_BUILD_COMMIT=2e92ecd0247d25f09797f8fdb044a166522fc05d
-> ```
 
 #### 验证：确认 GPU 在工作
 
-编译完成后，先做一件事——确认 llama.cpp 看到的是你的独立显卡，而不是 CPU 软件渲染。
+编译完成后，先查看 Vulkan 的原始物理设备顺序：
+
+```bash
+vulkaninfo --summary
+```
+
+输出会按 `GPU0`、`GPU1` 排列设备。找到你的独立显卡，不要选择名称中带 `llvmpipe` 的 CPU 软件模拟层。本文实例中的 W7900 是 `GPU0`，因此设置：
 
 ```bash
 export GGML_VK_VISIBLE_DEVICES=0
 
-./build-vulkan/bin/llama-cli --version
 ./build-vulkan/bin/llama-cli --list-devices
+./build-vulkan/bin/llama-cli --version
 ```
 
-为什么需要 `GGML_VK_VISIBLE_DEVICES=0`？因为 Linux 上 Vulkan 通常能同时看到两个"设备"：你的真显卡，和一个叫 llvmpipe 的 CPU 软件模拟层。如果 llama.cpp 不小心选了后者，模型照样能跑，但速度会慢几十倍，而且你可能还以为显卡出了问题。设为 `0` 就是锁定第一个设备（通常是独立 GPU）。
-
-正确的输出应该只有你的目标卡：
+`GGML_VK_VISIBLE_DEVICES` 使用的是 `vulkaninfo` 中的原始 `GPU` 序号。设置完成后，llama.cpp 应只列出目标显卡。本文实例的确认结果是：
 
 ```text
 Vulkan0: AMD Radeon Graphics (RADV NAVI31) (49136 MiB, 49109 MiB free)
@@ -182,24 +187,26 @@ mkdir -p models && cd models
 # 直接从 Hugging Face 下载
 curl -fL --retry 8 -C - \
   "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/0669b98607d47046c7c2b3f801011d54a08cfccf/Qwen3.8-27B-Q4_K_M.gguf" \
-  -o Qwen3.8-27B-Q4_K_M.gguf
+  -o Qwen3.8-27B-Q4_K_M.gguf.part &&
+
+echo "31629f53165ab6a7dad8c9847dcfd1fdf55829dac1e6e748f4a68581b0033d34  Qwen3.8-27B-Q4_K_M.gguf.part" \
+  | sha256sum -c - &&
+
+mv Qwen3.8-27B-Q4_K_M.gguf.part Qwen3.8-27B-Q4_K_M.gguf
 ```
 
-> **国内网络 / Radeon Cloud 用户：** HF 直连可能超时，换 hf-mirror.com 镜像即可。URL 中把 `huggingface.co` 替换为 `hf-mirror.com`，其余路径不变。下载完成后建议校验 SHA-256：
->
-> ```bash
-> echo "31629f53165ab6a7dad8c9847dcfd1fdf55829dac1e6e748f4a68581b0033d34  Qwen3.8-27B-Q4_K_M.gguf" \
->   | sha256sum -c -
-> ```
+> **国内网络 / Radeon Cloud 用户：** HF 直连可能超时，把 URL 中的 `huggingface.co` 替换为 `hf-mirror.com` 即可，SHA-256 保持不变。
 
 #### 快速验证：让模型说一句话
 
 模型下载完，先跑一条最简单的命令确认整条链路通了：
 
 ```bash
-cd ~/qwen38/llama.cpp-2e92ecd0247d25f09797f8fdb044a166522fc05d
+cd ~/qwen38/llama.cpp
 
-GGML_VK_VISIBLE_DEVICES=0 \
+# 本文 W7900 在 vulkaninfo 中是 GPU0；其他机器替换为实际序号
+export GGML_VK_VISIBLE_DEVICES=0
+
 ./build-vulkan/bin/llama-cli \
   -m ../models/Qwen3.8-27B-Q4_K_M.gguf \
   -ngl all \
@@ -231,17 +238,24 @@ cd ~/qwen38/models
 
 curl -fL --retry 8 -C - \
   "https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF/resolve/0669b98607d47046c7c2b3f801011d54a08cfccf/mtp-Qwen3.8-27B-Q4_0.gguf" \
-  -o mtp-Qwen3.8-27B-Q4_0.gguf
+  -o mtp-Qwen3.8-27B-Q4_0.gguf.part &&
+
+echo "051a1764cff8c4f3ee6ae8b00593a0364c7539c67fa50ffc58f3f96509fca38e  mtp-Qwen3.8-27B-Q4_0.gguf.part" \
+  | sha256sum -c - &&
+
+mv mtp-Qwen3.8-27B-Q4_0.gguf.part mtp-Qwen3.8-27B-Q4_0.gguf
 ```
 
-> 同上，国内网络把域名换成 hf-mirror.com。SHA-256: `051a1764cff8c4f3ee6ae8b00593a0364c7539c67fa50ffc58f3f96509fca38e`
+> 同上，国内网络把域名换成 `hf-mirror.com`，其余命令不变。
 
 启动服务：
 
 ```bash
-cd ~/qwen38/llama.cpp-2e92ecd0247d25f09797f8fdb044a166522fc05d
+cd ~/qwen38/llama.cpp
 
-GGML_VK_VISIBLE_DEVICES=0 \
+# 本文 W7900 在 vulkaninfo 中是 GPU0；其他机器替换为实际序号
+export GGML_VK_VISIBLE_DEVICES=0
+
 ./build-vulkan/bin/llama-server \
   -m ../models/Qwen3.8-27B-Q4_K_M.gguf \
   -md ../models/mtp-Qwen3.8-27B-Q4_0.gguf \
@@ -264,6 +278,14 @@ GGML_VK_VISIBLE_DEVICES=0 \
 - `--host 127.0.0.1`：只监听本机。如果你需要远程访问，建议通过 SSH 隧道转发，而不是直接改成 `0.0.0.0`（这个服务没有内置认证）。
 
 > **想先跑不带 MTP 的 baseline？** 去掉 `-md`、`--spec-type`、`--spec-draft-n-max` 和 `-ngld all` 四项就行，其余不变。
+
+如果服务运行在 Radeon Cloud，而客户端在你自己的电脑上，先在本地终端建立 SSH 隧道：
+
+```bash
+ssh -L 8080:127.0.0.1:8080 root@YOUR_RC_HOST -p YOUR_SSH_PORT
+```
+
+隧道保持连接后，本地客户端才能通过 `http://127.0.0.1:8080/v1` 访问远端服务。
 
 #### 发一个请求试试
 
@@ -291,38 +313,38 @@ curl http://127.0.0.1:8080/v1/chat/completions \
 
 这个请求连续跑了 5 次，回复逐字相同（因为 temperature=0），生成速度中位数 **44.7 tok/s**。
 
-到这里，Qwen3.8 27B 已经是一个在本地运行的 OpenAI 兼容 API 了。任何支持 OpenAI 格式的客户端——Continue、Open WebUI、LangChain、自己写的脚本——把 `base_url` 指向 `http://127.0.0.1:8080/v1` 就能用。
+到这里，Qwen3.8 27B 已经是一个 OpenAI 兼容 API 了。同一台机器上的脚本可以直接访问；远端客户端通过上面的 SSH 隧道连接后，再把 `base_url` 指向 `http://127.0.0.1:8080/v1`。
 
 ---
 
 ### MTP 到底快了多少？看内容类型
 
-不开 MTP 时，无论让模型做什么，生成速度几乎一样——都在 31.7–31.8 tok/s。这是 baseline：模型每步算一个 token，速度由计算量决定，和输出内容无关。
+在本次四类测试里，不开 MTP 时的生成速度都在 31.7–31.8 tok/s。
 
 开启 MTP=2 之后，速度开始和"输出内容的可预测性"强相关：
 
-| 任务类型 | 不开 MTP | MTP=2 | 提升 |
+| 任务类型 | 不开 MTP（tok/s） | MTP=2（tok/s） | 提升 |
 |---------|---------|-------|------|
 | 三句回答 | 31.8 | 44.7 | +41% |
 | 自然说明 | 31.7 | 41.6 | +31% |
-| 代码生成 | 31.7 | 64.0 | +102% |
-| 连续整数 | 31.8 | 66.5 | +109% |
+| 代码生成（900 token 截断） | 31.7 | 64.0 | +102% |
+| 连续整数（512 token 截断） | 31.8 | 66.5 | +109% |
 
 ![MTP 加速效果](images/mtp-speedup-w7900.png)
 
-*四类输出的 MTP 加速对比。每项运行 5 次取中位数，相同 prompt，temperature=0。*
+*四类输出的 MTP 加速对比。每一项内部使用相同 prompt，分别运行 5 次取中位数，temperature=0。*
 
-为什么差距这么大？回忆 MTP 的原理：模型草拟后续 token，猜对就跳过计算。代码和数字序列的"下一步"高度可预测（写完 `for i in range(` 后面大概率是数字和 `)`），所以草拟命中率极高——连续整数的命中率达到 100%，代码约 94%。自然语言就没这么好猜了，命中率只有 44% 左右，加速也相应收窄。
+在这四项测试中，草拟命中率与加速幅度呈同向变化：连续整数的命中率达到 100%，截断代码测试约 94%，自然说明约 44%。像 `for i in range(` 这类结构化内容，后续 token 通常更容易被 draft 猜中。
 
-一句话总结：**MTP 不是"开了就固定翻倍"，它更像顺风时的加速器——输出越规律，收益越大。**
+一句话总结：**MTP 不是"开了就固定翻倍"；在本次测试中，输出越规律，收益越大。**
 
 #### 关于输出一致性
 
-MTP 会影响输出内容吗？我对比了开/关 MTP 的输出：三句回答和连续整数这两项完全逐字相同；代码和自然说明则存在措辞差异（意思一样，但不是同一串字符）。如果你的场景对输出确定性要求高，建议用自己的 prompt 实际对比一下。
+MTP 会影响输出内容吗？我对比了开/关 MTP 的输出：三句回答和连续整数完全逐字相同；自然说明方向一致，但措辞不同；代码对照两边都在 900 token 处截断，不用于判断完整结果是否等价。如果你的场景对输出确定性要求高，建议用自己的 prompt 实际对比。
 
 #### 显存代价
 
-MTP=2 的额外显存开销约 1.3 GiB（从 17.8 GiB 升到 19.2 GiB）。对 48GB 的 W7900 来说完全无压力，24GB 显存的卡也装得下。代价很小，建议默认开启。
+MTP=2 的额外显存开销约 1.3 GiB（从 17.8 GiB 升到 19.2 GiB）。对这张 48GB W7900 来说余量充足。是否默认开启，则取决于你的 prompt 类型、上下文和并发设置。
 
 ### 跑得快，但能不能干活？
 
@@ -332,9 +354,9 @@ MTP=2 的额外显存开销约 1.3 GiB（从 17.8 GiB 升到 19.2 GiB）。对 4
 
 第一次我把所有需求塞在一个 prompt 里（文件读取、解析容错、命令行接口、统计逻辑、示例数据），模型两次都写到一半撞了输出长度限制。把需求收窄到核心统计函数后，1243 个 token，约 20 秒写完，生成速度 64.9 tok/s。
 
-代码拿去执行：正常输入、损坏记录、空输入、全无效输入——四组断言全部通过。
+去掉开头的 Markdown 围栏后再执行代码：正常输入、损坏记录、空输入、全无效输入——四组断言全部通过。
 
-有一个小毛病：开头写了 Markdown 代码围栏 ` ```python `，结尾漏了闭合的三个反引号。代码本身没问题，格式收尾差了一口气。这大概是本地 27B 模型当前的真实状态：活能干，但输出不能闭眼复制粘贴。
+有一个小毛病：开头写了 Markdown 代码围栏 ` ```python `，结尾漏了闭合的三个反引号。代码通过了当前四组断言，格式收尾则差了一口气。这大概是本地 27B 模型当前的真实状态：活能干，但输出不能闭眼复制粘贴。
 
 ---
 
@@ -344,17 +366,17 @@ MTP=2 的额外显存开销约 1.3 GiB（从 17.8 GiB 升到 19.2 GiB）。对 4
 
 - **Git 证书链异常**：`git clone` 会失败，用 codeload 下载源码归档绕过（见 Part 3）。
 - **HF 不可达**：模型下载走 hf-mirror.com 镜像。
-- **Web UI 资产下载失败**：编译时关闭 `-DLLAMA_BUILD_UI=OFF` 即可。
-- **llvmpipe 干扰**：Vulkan 设备列表里会出现 CPU 软渲染，用 `GGML_VK_VISIBLE_DEVICES=0` 锁定真显卡。
-- **无持久存储**：Pod 重启后数据丢失，日志和模型文件及时备份到外部。
+- **Web UI 资产下载失败**：编译时设置 `-DLLAMA_BUILD_UI=OFF` 即可。
+- **llvmpipe 干扰**：用 `vulkaninfo --summary` 找到真显卡的原始 `GPU` 序号，再设置 `GGML_VK_VISIBLE_DEVICES`。
+- **无持久存储**：Pod 删除或重建后数据丢失，日志和模型文件及时备份到外部。
 
 ---
 
 ### 总结
 
-一张 48GB 显存的 A 卡，一份 19GB 的量化模型，llama.cpp 加 Vulkan 后端——从零到能用的本地 API，整个流程走下来不到一小时。MTP 开了之后写代码能到 64 tok/s，普通对话 42 tok/s，体感就是没有等待。
+一张 48GB 显存的 A 卡，一份 19GB 的量化模型，llama.cpp 加 Vulkan 后端——这条从空环境到 OpenAI 兼容 API 的路径已经跑通。MTP 开启后，本文的完整代码任务达到 64.9 tok/s，三句回答达到 44.7 tok/s。
 
-所有命令、模型链接和配置都在上文里，参考资料放在最后面。如果你有一张 24GB 以上显存的 RDNA3 卡，换掉 GPU 型号这一个变量，其余步骤原样走一遍就行。
+所有命令、模型链接和配置都在上文里，参考资料放在最后面。换到其他 AMD 显卡时，沿用同一条主线，并重新确认驱动、Vulkan 设备序号、显存余量和实际 offload 层数。
 
 下一篇想试的事情：把上下文从 8192 拉到 Qwen3.8 支持的 26 万 token 上限。一整本小说塞进去，这张卡的显存还够不够用？速度会掉到什么程度？到时候见。
 
@@ -369,4 +391,3 @@ MTP=2 的额外显存开销约 1.3 GiB（从 17.8 GiB 升到 19.2 GiB）。对 4
 - [AMD Qwen3.8 27B Day 0 博客](https://www.amd.com/en/blogs/2026/run-qwen-3-8-27b-on-amd-ryzen-ai-max-and-radeon-graphics-cards-day-0.html)
 - [llama.cpp MTP 支持 PR #22673](https://github.com/ggml-org/llama.cpp/pull/22673)
 - [llama.cpp GitHub](https://github.com/ggml-org/llama.cpp)
-
