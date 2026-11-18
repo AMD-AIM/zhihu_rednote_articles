@@ -1,14 +1,14 @@
-# 每天10美元免费额度，我在Cherry Studio里用AMD模型搓了个“美股合成大西瓜”
+# Cherry Studio内置AMD GPU Cloud，用免费模型API做个“美股合成大西瓜”
 
-平时在电脑上用Cherry Studio调大模型的人不少。最近升到2.2.2版本，我发现它的服务商列表里已经内置了AMD GPU Cloud，连API地址都默认配好了。填个Key就能免费调DeepSeek V4.1 Flash、Qwen3.8 27B、GLM-5.3-Flash这十来个开源模型。大显存显卡？不需要；本地推理部署？也不需要。
+Cherry Studio是一个常用的开源桌面AI客户端，可以把不同家的大模型接进同一个界面里使用。最近更新的2.2.2版本在服务商列表里内置了AMD GPU Cloud，模型由Radeon Cloud的Token Factory提供。填一个API Key就能免费调用DeepSeek V4.1 Flash、Qwen3.8 27B、GLM-5.3-Flash等十来个开源模型，不需要准备本地显卡和部署环境。
 
-更香的是，走Cherry Studio内置的合作入口过去领Key，[AMD官方合作介绍](https://zhuanlan.zhihu.com/p/2076790917604950264)里给的是每日10美元免费API额度，具体到账和剩余用量在后台用量页就能查到。
+根据[AMD官方合作介绍](https://zhuanlan.zhihu.com/p/2076790917604950264)，从Cherry Studio内置的合作入口过去领Key，每天有10美元的免费API调用额度，剩余用量在Token Factory后台随时能查，日常拿来问答、改代码或者做点小工具足够用了。
 
-光拿来聊天有点浪费，我干脆让里面的Qwen3.8 27B帮我搓了个单网页的“美股合成大西瓜”，先看跑出来的效果。
+这次我用里面的Qwen3.8 27B试了一下，让它写了一个单网页的“美股合成大西瓜”。先看跑出来的效果。
 
 ![美股版合成大西瓜实机画面](images/03-game-desktop.png)
 
-玩法大家都很熟，只不过掉下来的不是水果，换成了美股科技公司的圆球。从第1级的Intel开始往下掉，两个一样的撞一起往上升一级，第6级合出橙红高亮的AMD，再往上还能继续合Broadcom、Apple和NVIDIA。整个游戏就是一个独立的HTML文件，浏览器双击就能玩。
+规则和大家熟悉的合成大西瓜一样，只是把掉落的水果换成了美股科技公司的图标。从第1级的Intel开始往下掉，两个一样的碰到一起往上升一级，第6级合出橙红高亮的AMD，再往上还有Broadcom、Apple和NVIDIA。整个游戏就是一个独立的HTML文件，浏览器双击就能玩。
 
 ## 装好Cherry Studio，三分钟把AMD模型接进来
 
