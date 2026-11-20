@@ -1,4 +1,4 @@
-# MOSS-Image上手实测，在ComfyUI里用JSON坐标框控制海报排版
+# AMD Radeon GPU推理MOSS-Image
 
 现在能写对汉字的开源文生图模型已经不少了，像我们之前测过的Qwen-Image-2.1，单张中文海报的出图质量就挺不错。
 
